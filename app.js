@@ -496,7 +496,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnClear = document.getElementById('btn-clear');
     const outputContainer = document.getElementById('output-container');
     const statusIndicator = document.getElementById('status-indicator');
-    const testCasesDropdown = document.getElementById('test-cases');
     const magicDepthInput = document.getElementById('magic-depth');
     const initialSequenceInput = document.getElementById('initial-sequence');
     const operationsToggles = document.getElementById('operations-toggles');
@@ -517,137 +516,106 @@ document.addEventListener('DOMContentLoaded', () => {
         toggleCheckboxes[opName] = cb;
     }
 
-    // Test cases setup
-    const testData = {
-        'test1': {
-            input: "RJ}G%wA",
-            crib: "DCODE"
-        },
-        'test2': {
-            // "Hello World" -> Base64 -> Base32
-            input: "KNHFO3ZONI2C65DBOVXXE4TFOQ======",
-            crib: "Hello"
-        },
-        'test3': {
-            // "Base85 is cool!" -> Base85 -> "<~0etL7BOu5_1D,Gg0@~>" -> Base64
-            input: "PD4wZXRMN0JPdTVfMUQsR2cwQH4+",
-            crib: "Base85"
-        },
-        'test4': {
-            input: "V214a1YxWXpVa1ZpU0ZwWFlUSmtWbzFzVlRGVk1IaHlXR3BPVEZWV1NrcE1lbEphWVZaS1ZWTnRlRWRTTWtFeQ==",
-            crib: ""
-        }
-    };
+    // Buttons setup    btnClear.addEventListener('click', () => {
+    inputText.value = '';
+    cribText.value = '';
+    outputContainer.innerHTML = '<div class="empty-state">Enter text and choose an operation to begin.</div>';
+    statusIndicator.textContent = 'Ready';
+    statusIndicator.className = 'status-indicator';
+});
 
-    testCasesDropdown.addEventListener('change', (e) => {
-        const val = e.target.value;
-        if (testData[val]) {
-            inputText.value = testData[val].input;
-            cribText.value = testData[val].crib;
-        }
-    });
+function displayResults(results, isAllDecodes = false) {
+    outputContainer.innerHTML = '';
 
-    btnClear.addEventListener('click', () => {
-        inputText.value = '';
-        cribText.value = '';
-        testCasesDropdown.value = '';
-        outputContainer.innerHTML = '<div class="empty-state">Enter text and choose an operation to begin.</div>';
-        statusIndicator.textContent = 'Ready';
-        statusIndicator.className = 'status-indicator';
-    });
+    if (!results || results.length === 0) {
+        outputContainer.innerHTML = '<div class="empty-state">No decodes yielded printable text.</div>';
+        return;
+    }
 
-    function displayResults(results, isAllDecodes = false) {
-        outputContainer.innerHTML = '';
+    // Only show top 30 to not freeze UI, but could paginate
+    const toShow = results.slice(0, 30);
 
-        if (!results || results.length === 0) {
-            outputContainer.innerHTML = '<div class="empty-state">No decodes yielded printable text.</div>';
-            return;
-        }
+    toShow.forEach(res => {
+        const clone = resultTemplate.content.cloneNode(true);
+        const pathContainer = clone.querySelector('.path-badges');
 
-        // Only show top 30 to not freeze UI, but could paginate
-        const toShow = results.slice(0, 30);
+        res.path.forEach((p, idx) => {
+            const badge = document.createElement('span');
+            badge.className = 'path-badge';
+            badge.textContent = p;
+            pathContainer.appendChild(badge);
 
-        toShow.forEach(res => {
-            const clone = resultTemplate.content.cloneNode(true);
-            const pathContainer = clone.querySelector('.path-badges');
-
-            res.path.forEach((p, idx) => {
-                const badge = document.createElement('span');
-                badge.className = 'path-badge';
-                badge.textContent = p;
-                pathContainer.appendChild(badge);
-
-                if (idx < res.path.length - 1) {
-                    const arrow = document.createElement('span');
-                    arrow.className = 'path-arrow';
-                    arrow.textContent = '→';
-                    pathContainer.appendChild(arrow);
-                }
-            });
-
-            const scoreSpan = clone.querySelector('.score-badge');
-            if (isAllDecodes) {
-                scoreSpan.style.display = 'none'; // Hide score for purely showing all decodes
-            } else {
-                const scoreFormat = res.score > 9000 ? '10000 (Crib Match)' : res.score.toFixed(2);
-                scoreSpan.querySelector('.score-value').textContent = scoreFormat;
-
-                if (res.score > 9000) scoreSpan.classList.add('high');
-                else if (res.score < 0) scoreSpan.classList.add('low');
+            if (idx < res.path.length - 1) {
+                const arrow = document.createElement('span');
+                arrow.className = 'path-arrow';
+                arrow.textContent = '→';
+                pathContainer.appendChild(arrow);
             }
-
-            const textarea = clone.querySelector('textarea');
-            textarea.value = res.text;
-            if (res.isError) {
-                textarea.style.color = 'var(--danger)';
-                textarea.style.fontStyle = 'italic';
-            }
-            outputContainer.appendChild(clone);
         });
-    }
 
-    async function process(action) {
-        const input = inputText.value.trim();
-        const crib = cribText.value.trim();
+        const scoreSpan = clone.querySelector('.score-badge');
+        if (isAllDecodes) {
+            scoreSpan.style.display = 'none'; // Hide score for purely showing all decodes
+        } else {
+            const scoreFormat = res.score > 9000 ? '10000 (Crib Match)' : res.score.toFixed(2);
+            scoreSpan.querySelector('.score-value').textContent = scoreFormat;
 
-        if (!input) {
-            alert("Please enter input text.");
-            return;
+            if (res.score > 9000) scoreSpan.classList.add('high');
+            else if (res.score < 0) scoreSpan.classList.add('low');
         }
 
-        statusIndicator.textContent = 'Processing...';
-        statusIndicator.className = 'status-indicator loading';
+        const textarea = clone.querySelector('textarea');
+        textarea.value = res.text;
+        if (res.isError) {
+            textarea.style.color = 'var(--danger)';
+            textarea.style.fontStyle = 'italic';
+        }
+        outputContainer.appendChild(clone);
+    });
+}
 
-        // Small timeout to allow UI to update
-        setTimeout(async () => {
-            const startTime = performance.now();
-            let results = [];
-            let magicDepth = parseInt(magicDepthInput.value) || 5;
+async function process(action) {
+    const input = inputText.value.trim();
+    const crib = cribText.value.trim();
 
-            // Get active operations
-            const activeOps = Object.keys(toggleCheckboxes).filter(op => toggleCheckboxes[op].checked);
-
-            // Parse initial sequence
-            let initialSeq = [];
-            const seqVal = initialSequenceInput.value.trim();
-            if (seqVal) {
-                initialSeq = seqVal.split(',').map(s => s.trim()).filter(s => Object.keys(Operations).includes(s));
-            }
-
-            if (action === 'all') {
-                results = await runAllDecodes(input);
-            } else if (action === 'magic') {
-                results = await runMagic(input, crib, magicDepth, activeOps, initialSeq);
-            }
-
-            displayResults(results, action === 'all');
-
-            const elapsed = (performance.now() - startTime).toFixed(1);
-            statusIndicator.textContent = `Done (${results.length} results, ${elapsed}ms)`;
-            statusIndicator.className = 'status-indicator';
-        }, 50);
+    if (!input) {
+        alert("Please enter input text.");
+        return;
     }
 
-    btnAllDecodes.addEventListener('click', () => process('all'));
-    btnMagic.addEventListener('click', () => process('magic'));
+    statusIndicator.textContent = 'Processing...';
+    statusIndicator.className = 'status-indicator loading';
+
+    // Small timeout to allow UI to update
+    setTimeout(async () => {
+        const startTime = performance.now();
+        let results = [];
+        let magicDepth = parseInt(magicDepthInput.value) || 5;
+
+        // Get active operations
+        const activeOps = Object.keys(toggleCheckboxes).filter(op => toggleCheckboxes[op].checked);
+
+        // Parse initial sequence
+        let initialSeq = [];
+        const seqVal = initialSequenceInput.value.trim();
+        if (seqVal) {
+            initialSeq = seqVal.split(',').map(s => s.trim()).filter(s => Object.keys(Operations).includes(s));
+        }
+
+        if (action === 'all') {
+            results = await runAllDecodes(input);
+        } else if (action === 'magic') {
+            results = await runMagic(input, crib, magicDepth, activeOps, initialSeq);
+        }
+
+        displayResults(results, action === 'all');
+
+        const elapsed = (performance.now() - startTime).toFixed(1);
+        statusIndicator.textContent = `Done (${results.length} results, ${elapsed}ms)`;
+        statusIndicator.className = 'status-indicator';
+    }, 50);
+}
+
+btnAllDecodes.addEventListener('click', () => process('all'));
+btnMagic.addEventListener('click', () => process('magic'));
 });
