@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BetterMagic</title>
+    <link rel="stylesheet" href="styles.css">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap"
+        rel="stylesheet">
+</head>
+
+<body>
+    <div class="app-container">
+        <header>
+            <div class="logo">
+                <div class="title-block">
+                    <h1>BetterMagic</h1>
+                    <p class="byline">
+                        vibe coded with love by
+                        <a href="https://github.com/Crazzyman1081" target="_blank" rel="noopener noreferrer">Crazzyman1081 @ 0bscuri7y</a>
+                        ·
+                        <a href="https://crazzyman.in" target="_blank" rel="noopener noreferrer">crazzyman.in</a>
+                        · Reach out on Discord: <span class="discord-user">crazzyman1081</span>
+                    </p>
+                </div>
+            </div>
+            <div class="header-links">
+                <a class="header-link" href="https://github.com/Crazzyman1081/CyberChef-BetterMagic" target="_blank" rel="noopener noreferrer">
+                    <svg viewBox="0 0 16 16" aria-hidden="true" class="header-link-icon">
+                        <path fill="currentColor" d="M8 0C3.58 0 0 3.67 0 8.2c0 3.62 2.29 6.68 5.47 7.76.4.08.55-.18.55-.4 0-.2-.01-.86-.01-1.56-2.01.38-2.53-.5-2.69-.96-.09-.24-.48-.96-.82-1.16-.28-.15-.68-.53-.01-.54.63-.01 1.08.59 1.23.84.72 1.26 1.87.91 2.33.69.07-.53.28-.91.5-1.12-1.78-.21-3.64-.92-3.64-4.08 0-.9.31-1.64.82-2.22-.08-.21-.36-1.06.08-2.2 0 0 .67-.22 2.2.85A7.42 7.42 0 0 1 8 3.89c.68 0 1.37.1 2.01.29 1.53-1.07 2.2-.85 2.2-.85.44 1.14.16 1.99.08 2.2.51.58.82 1.32.82 2.22 0 3.17-1.87 3.87-3.65 4.08.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .22.15.49.55.4A8.23 8.23 0 0 0 16 8.2C16 3.67 12.42 0 8 0Z"></path>
+                    </svg>
+                    GitHub Repo
+                </a>
+            </div>
+        </header>
+
+        <main class="main-content">
+            <section class="ops-section glass-panel">
+                <h2>Active Operations</h2>
+                <div class="operations-toggles" id="operations-toggles">
+                    <!-- Checkboxes will be injected here -->
+                </div>
+            </section>
+
+            <section class="input-section glass-panel">
+                <h2>Input</h2>
+                <textarea id="input-text" placeholder="Enter encoded text here..." spellcheck="false"></textarea>
+
+                <div class="controls-row">
+                    <div class="input-group">
+                        <label for="crib-text">Known Crib (Optional)</label>
+                        <input type="text" id="crib-text" placeholder="e.g. flag{, HTTP/1.1">
+                    </div>
+                </div>
+
+                <div class="advanced-options">
+                    <div class="controls-row magic-options-row">
+                        <div class="input-group">
+                            <label for="initial-sequence">Initial Sequence</label>
+                            <input type="text" id="initial-sequence" placeholder="e.g. Base64, Base32">
+                        </div>
+                        <div class="input-group depth-group">
+                            <label for="magic-depth">Magic Depth</label>
+                            <input type="number" id="magic-depth" value="10" min="1" max="10">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="button-group">
+                    <button id="btn-all-decodes" class="btn btn-secondary">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <polyline points="21 8 21 21 3 21 3 8"></polyline>
+                            <rect x="1" y="3" width="22" height="5"></rect>
+                            <line x1="10" y1="12" x2="14" y2="12"></line>
+                        </svg>
+                        All Base Decodes
+                    </button>
+                    <button id="btn-magic" class="btn btn-primary">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <path d="M2.5 2v6h6M21.5 22v-6h-6" />
+                            <path d="M22 11.5A10 10 0 0 0 3.2 7.2M2 12.5a10 10 0 0 0 18.8 4.2" />
+                        </svg>
+                        Smart Magic Search
+                    </button>
+                    <button id="btn-clear" class="btn btn-ghost">Clear</button>
+                </div>
+            </section>
+
+            <section class="results-section glass-panel">
+                <div class="results-header">
+                    <h2>Output</h2>
+                    <div id="status-indicator" class="status-indicator">Ready</div>
+                </div>
+                <div id="progress-wrap" class="progress-wrap hidden" aria-hidden="true">
+                    <div class="progress-track">
+                        <div id="progress-bar" class="progress-bar"></div>
+                    </div>
+                </div>
+                <div id="output-container" class="output-container">
+                    <div class="empty-state">
+                        Enter text and choose an operation to begin.
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Template for a result card -->
+    <template id="result-card-template">
+        <div class="result-card">
+            <div class="result-header">
+                <div class="path-badges"></div>
+                <div class="metrics">
+                    <span class="score-badge">Score: <span class="score-value">0</span></span>
+                </div>
+            </div>
+            <textarea class="result-text" readonly></textarea>
+        </div>
+    </template>
+
+    <!-- Modules -->
+    <script src="js/registry.js"></script>
+    <script src="js/scoring.js"></script>
+
+    <!-- Ciphers -->
+    <script src="js/ciphers/base32.js"></script>
+    <script src="js/ciphers/base45.js"></script>
+    <script src="js/ciphers/base58.js"></script>
+    <script src="js/ciphers/base62.js"></script>
+    <script src="js/ciphers/base64.js"></script>
+    <script src="js/ciphers/base85.js"></script>
+    <script src="js/ciphers/base91.js"></script>
+    <script src="js/ciphers/base92.js"></script>
+    <script src="js/ciphers/binary.js"></script>
+    <script src="js/ciphers/decimal.js"></script>
+    <script src="js/ciphers/hex.js"></script>
+    <script src="js/ciphers/octal.js"></script>
+    <script src="js/ciphers/reverse.js"></script>
+    <script src="js/ciphers/rot13.js"></script>
+    <script src="js/ciphers/rot47.js"></script>
+    <script src="js/ciphers/rot8000.js"></script>
+
+    <!-- Main App -->
+    <script src="app.js"></script>
+</body>
+
+</html>

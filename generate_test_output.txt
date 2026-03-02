@@ -1,0 +1,72 @@
+
+================================
+   Running DEEP Test Suite      
+   (Depths 7-10, All Ciphers)   
+================================
+
+
+[Test Case #1] - Depth: 9 | Payload Size: 2181 bytes
+Expected Path:  Base92 -> Binary -> Base85 -> Base85 -> Base45 -> ROT47 -> Hex -> ROT13 -> Base92
+Result: ❌ FAILED in 0.13s
+    Ciphertext    : 2y$0h3W^#'8\&?RC3=/Gfb*M#)DX&?OS-?$0fj*M(cCp&7RB3=$0fj'^#)Ct&7OS3;$,fjWN#)Ct$nOS3=/CfjW]#'DX&7OS3=#G... (length: 2181)
+    Closest text  : 00111100 01111110 00110100 01000110 01010100 01000001 00100100 00110011 01000010 01100111 00100101 0
+    Closest diff  : Base92
+
+[Test Case #2] - Depth: 10 | Payload Size: 260 bytes
+Expected Path:  ROT8000 -> Base58 -> ROT47 -> ROT8000 -> ROT13 -> Base32 -> Hex -> Base91 -> Base45 -> Reverse
+Result: ❌ FAILED in 0.026s
+    Ciphertext    : 簽籖籰籜籭籷类籍籡籠籢籿米簻籏籁籰籛籾籾籍类籡籖籂籚籀籫籊簿簼簺籑籐籛籔籊籟籍籌籙籔籣籲籓米籶籲籲籌簼籊粂籼籼籼籢籍籔籡籸籭籚籴籓簾籔籲籋籊籯籮粀籚籲簺籌籜籖籫籠类籁籹籺籛籞籝籕籽籚籴籱籫籀粀粀籙籢籯... (length: 260)
+    Closest text  : 4MgSdnrDXWYvj2F8gRuuDrXM9Q7bA631HGRKAVDCPKZiJjmiiC3AysssYDKXodQkJ5KiBAfewQi1CSMbWr8pqRUTLtQkhb7wwPYf
+    Closest diff  : ROT8000
+
+[Test Case #3] - Depth: 7 | Payload Size: 20942 bytes
+Expected Path:  Binary -> Decimal -> ROT13 -> Decimal -> Base64 -> ROT8000 -> Hex
+Result: ✅ PASSED in 0.49s (Found via: Binary -> Decimal -> Decimal -> Base64 -> ROT8000 -> Hex)
+
+[Test Case #4] - Depth: 7 | Payload Size: 2099 bytes
+Expected Path:  Base85 -> Decimal -> Base62 -> Base92 -> Base32 -> Base32 -> Decimal
+Result: ✅ PASSED in 0.03s (Found via: Base85 -> Decimal -> Base62 -> Base92 -> Base32 -> Base32 -> Decimal)
+
+[Test Case #5] - Depth: 8 | Payload Size: 136 bytes
+Expected Path:  Base91 -> Reverse -> Base45 -> Reverse -> Base91 -> Base62 -> ROT8000 -> Base62
+Result: ❌ FAILED in 0.009s
+    Ciphertext    : mRn/u#_irL"Fg7]c6!1E^vWYC5P%pZ8eEaWc21jdVN9INY{W8O?xS0BjQJAU0D|QqRC.SmFd84wVz+,a"LYGxgVdfMGD}jhYwtq.... (length: 136)
+    Closest text  : nBMCtPdNv1dPYMuGp11oOOsAHlFDp0xPCI7CrUH3ocAIUUTZ590poqWKgzd
+    Closest diff  : Base91 -> Reverse -> Base45 -> Reverse -> Base91
+
+[Test Case #6] - Depth: 10 | Payload Size: 105878 bytes
+Expected Path:  Base58 -> ROT8000 -> Base85 -> ROT47 -> Base92 -> Binary -> Octal -> Decimal -> Binary -> Base32
+Result: ❌ FAILED in 49.745s
+    Ciphertext    : nYWZ1CD4yqafcoGNewUqAjfbT6XzsuVfJSRkF9SaXCTHEL37bMVDK2xW9jfTrcqMcnzLoNfjwgGfkJ3awFeee5FgySacW6AMu9Yt... (length: 105878)
+    Closest text  : mghM2efo4pQtdRKuiHQ2U4wdCQwobMqOi1jzx2gCqUN8FHuwQNq2rZ9vpcmvMAqmwXeQwWaqATutxprj6mJQf4946lDDaPn1EzaI
+    Closest diff  : ROT13 -> Reverse
+
+[Test Case #7] - Depth: 8 | Payload Size: 101938 bytes
+Expected Path:  Base92 -> Base64 -> Binary -> Binary -> Binary -> Reverse -> ROT8000 -> Base45
+Result: ❌ FAILED in 40.006s
+    Ciphertext    : =1Qsr3]n*8XA'g6S:!2S4g-PK)R!AWG?9$%F>Nd|m\Rlm>-{L=]{$'\X:$k]>P&.=3Qspj[#)tXA'ggC?[2O4^-OK)R!C)GO9#u1... (length: 101938)
+    Closest text  : 00110001 00110001 00110001 00110001 00110001 00110000 00110000 00110000 00110001 00110000 00110000 0
+    Closest diff  : Base92 -> Base64 -> Binary
+
+[Test Case #8] - Depth: 8 | Payload Size: 48482 bytes
+Expected Path:  Binary -> Decimal -> Decimal -> Octal -> Base58 -> Hex -> Base58 -> Base92
+Result: ✅ PASSED in 3.331s (Found via: Binary -> Decimal -> Decimal -> Octal -> Base58 -> Hex -> Base58 -> Base92)
+
+[Test Case #9] - Depth: 8 | Payload Size: 139 bytes
+Expected Path:  ROT47 -> Base62 -> Base85 -> ROT13 -> Reverse -> ROT47 -> Base91 -> Hex
+Result: ❌ FAILED in 0.014s
+    Ciphertext    : `qr(`y69q!=<(_z+#$hA)>v(&yb)?I${vt7EBHHbyg:w$%:_?3vGh?>Aaf5;9|g`~r:aHbJ|&rDu5(%(xquI%H>'?>vxK7v{C?g<... (length: 139)
+    Closest text  : 6LAG{master_decoder_deep_test_9}
+    Closest diff  : ROT47 -> Base62 -> Base85 -> ROT13 -> Reverse -> ROT47 -> Base91 -> Hex
+
+[Test Case #10] - Depth: 10 | Payload Size: 7844 bytes
+Expected Path:  ROT13 -> Hex -> Base85 -> Base45 -> Base92 -> Decimal -> Binary -> Base62 -> Base58 -> ROT8000
+Result: ❌ FAILED in 1.712s
+    Ciphertext    : 3p7r3738632445392s4n472n366s6r3n353n4937213r322963672q316651496p324331373r3o29443p4q373945323s304r70... (length: 7844)
+    Closest text  : oAfCofogeonccdohnDc2cfn2oeeDeCo2odo2chofn`oConnheoefnBo`eed`cheAoncoo`ofoCo3nhccoAcBofohcdonoDo_cCf_
+    Closest diff  : ROT13 -> ROT47 -> ROT13 -> ROT47 -> ROT13 -> ROT47 -> ROT13 -> ROT47 -> ROT13 -> ROT47 -> ROT13
+
+================================
+   Final Results: 3/10 Passed (30%)
+================================
+
