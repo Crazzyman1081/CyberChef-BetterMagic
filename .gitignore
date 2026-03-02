@@ -1,0 +1,8 @@
+# Local test and benchmark artifacts
+generate_test.js
+generate_test_output.txt
+test_output.txt
+verify_all.js
+
+# Common temporary outputs
+*.log
