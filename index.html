@@ -45,6 +45,21 @@
                 <h2>Active Operations</h2>
                 <div class="operations-toggles" id="operations-toggles">
                     <!-- Checkboxes will be injected here -->
+                    <div class="toggle-label special-toggle xor-inline-container" id="xor-operation-container">
+                        <label class="xor-checkbox-label">
+                            <input type="checkbox" id="xor-toggle" value="XOR"> XOR
+                        </label>
+                        <div class="xor-inline-inputs" id="xor-inline-inputs">
+                            <input type="text" id="xor-key" class="xor-compact-input" placeholder="Key">
+                            <select id="xor-key-type" class="select-box xor-compact-select">
+                                <option value="utf8">UTF-8</option>
+                                <option value="hex">Hex</option>
+                            </select>
+                            <div class="info-icon-wrapper" id="xor-info-icon">
+                                <span class="info-icon">ⓘ</span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </section>
 
@@ -67,7 +82,7 @@
                         </div>
                         <div class="input-group depth-group">
                             <label for="magic-depth">Magic Depth</label>
-                            <input type="number" id="magic-depth" value="10" min="1" max="10">
+                            <input type="number" id="magic-depth" value="5" min="1" max="10">
                         </div>
                     </div>
                 </div>
@@ -126,6 +141,18 @@
         </div>
     </template>
 
+    <!-- Global Tooltip for escaping scroll containers -->
+    <div id="global-info-tooltip" class="global-tooltip glowing-blue">
+        <strong>Special Cipher limitation:</strong><br>
+        This slows down the program a lot, so it's off by default<br><br>
+
+        <strong>Empty key</strong> 256 keys brute force.<br> <br>
+        <strong>Performance constraint</strong> Only 1 unique key allowed per chain<br><br>
+
+        <strong>Tip</strong>If you find a good candidate, you can run it through the decoder again. This helps guess
+        if multiple unique XOR keys (single byte) were applied sequentially
+    </div>
+
     <!-- Modules -->
     <script src="js/registry.js"></script>
     <script src="js/scoring.js"></script>
@@ -147,6 +174,7 @@
     <script src="js/ciphers/rot13.js"></script>
     <script src="js/ciphers/rot47.js"></script>
     <script src="js/ciphers/rot8000.js"></script>
+    <script src="js/ciphers/xor.js"></script>
 
     <!-- Main App -->
     <script src="app.js"></script>

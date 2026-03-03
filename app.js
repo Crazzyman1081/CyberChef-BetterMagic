@@ -278,29 +278,27 @@ async function runMagic(input, options) {
 
     // Fix #6 — LRU-bounded decode cache
     const decodeCacheByOp = new Map();
-    function getCachedDecode(opName, op, text) {
-        const canCache = text.length <= 50000;
-        let opCache = null;
-        if (canCache) {
-            opCache = decodeCacheByOp.get(opName);
-            if (!opCache) {
-                opCache = new Map();
-                decodeCacheByOp.set(opName, opCache);
-            } else if (opCache.has(text)) {
-                return opCache.get(text);
+    function getCachedDecode(opName, op, text, optionsObj = {}) {
+        let opCache = decodeCacheByOp.get(opName);
+        if (!opCache) {
+            opCache = new Map();
+            decodeCacheByOp.set(opName, opCache);
+        }
+        // If passing options (e.g. for XOR), mix it into the cache key
+        const cacheKey = optionsObj.xorKey ? text + '|' + optionsObj.xorKey + ':' + optionsObj.xorKeyType : text;
+
+        let result = opCache.get(cacheKey);
+        if (result === undefined) {
+            try {
+                result = op.decode(text, optionsObj);
+            } catch (e) {
+                result = null;
             }
-        }
-        let result = null;
-        try {
-            result = op.decode(text, options);
-        } catch (e) {
-            result = null;
-        }
-        if (canCache) {
+            if (!result) result = null;
             if (opCache.size >= MAX_CACHE_PER_OP) {
                 evictOldest(opCache);
             }
-            opCache.set(text, result);
+            opCache.set(cacheKey, result);
         }
         return result;
     }
@@ -431,9 +429,26 @@ async function runMagic(input, options) {
                 }
 
                 if (op.isMulti) {
-                    const multiRes = getCachedDecode(opName, op, parentText);
+                    // Inject options into getCachedDecode for ciphers that need them (like XOR)
+                    const multiRes = getCachedDecode(opName, op, parentText, options);
                     if (multiRes) {
                         for (const m of multiRes) {
+
+                            // Prevent multiple different XOR keys in a single chain
+                            // If this op is an XOR, check if we've already done an XOR with a different key
+                            if (m.op.startsWith('XOR(Key:')) {
+                                let validXor = true;
+                                let curr = item.pathNode;
+                                while (curr) {
+                                    if (curr.op.startsWith('XOR(Key:') && curr.op !== m.op) {
+                                        validXor = false;
+                                        break;
+                                    }
+                                    curr = curr.prev;
+                                }
+                                if (!validXor) continue;
+                            }
+
                             const fp = textFingerprint(m.value);
                             if (!seen.has(fp) && m.value !== parentText && passesOutputValidation(m.value)) {
                                 seen.add(fp);
@@ -530,7 +545,17 @@ document.addEventListener('DOMContentLoaded', () => {
     // Generate checkboxes from Registry
     const Operations = window.Decoder.Operations;
     const toggleCheckboxes = {};
+
+    // Grab the hardcoded XOR toggle that we placed in index.html
+    const xorCb = document.getElementById('xor-toggle');
+    if (xorCb) {
+        toggleCheckboxes['XOR'] = xorCb;
+    }
+
     for (const opName of Object.keys(Operations)) {
+        if (opName === 'XOR') {
+            continue; // Already handled above
+        }
         const label = document.createElement('label');
         label.className = 'toggle-label';
         const cb = document.createElement('input');
@@ -553,6 +578,32 @@ document.addEventListener('DOMContentLoaded', () => {
         if (progressWrap) progressWrap.classList.add('hidden');
         if (progressBar) progressBar.style.width = '0%';
     });
+
+    // Custom Tooltip Logic to escape scroll bounds
+    const infoIconWrapper = document.querySelector('.info-icon-wrapper');
+    const globalTooltip = document.getElementById('global-info-tooltip');
+
+    if (infoIconWrapper && globalTooltip) {
+        infoIconWrapper.addEventListener('mouseenter', () => {
+            globalTooltip.classList.add('visible');
+        });
+
+        infoIconWrapper.addEventListener('mousemove', (e) => {
+            // Position tooltip near the cursor, offset slightly
+            const tooltipWidth = 260;
+            // Ensure tooltip doesn't bleed off the right edge of the window
+            let leftPos = e.clientX + 15;
+            if (leftPos + tooltipWidth > window.innerWidth) {
+                leftPos = e.clientX - tooltipWidth - 10;
+            }
+            globalTooltip.style.left = leftPos + 'px';
+            globalTooltip.style.top = (e.clientY - 40) + 'px';
+        });
+
+        infoIconWrapper.addEventListener('mouseleave', () => {
+            globalTooltip.classList.remove('visible');
+        });
+    }
 
     function displayResults(results, isAllDecodes = false) {
         outputContainer.innerHTML = '';
@@ -650,11 +701,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 .filter(Boolean);
         }
 
+        const xorKeyUI = document.getElementById('xor-key');
+        const xorKeyTypeUI = document.getElementById('xor-key-type');
+        const xorKeyVal = xorKeyUI ? xorKeyUI.value.trim() : '';
+        const xorKeyTypeVal = xorKeyTypeUI ? xorKeyTypeUI.value : 'utf8';
+
         const options = {
             crib: crib,
             maxDepth: magicDepth,
             activeOps: activeOps,
             initialSequence: initialSeq,
+            xorKey: xorKeyVal,
+            xorKeyType: xorKeyTypeVal,
             onProgress: action === 'magic' ? (fraction, depth, totalDepth) => {
                 if (progressBar) {
                     const pct = Math.max(0, Math.min(100, Math.round(fraction * 100)));
