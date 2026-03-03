@@ -1,5 +1,6 @@
 window.Decoder.registerCipher('Base32', {
     testRegex: /^[a-z2-7=\s]+$/i,
+    entropyRange: [1.0, 5.2],
     decode: (input) => {
         input = input.replace(/=+$/, '').replace(/\s/g, '');
         const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';

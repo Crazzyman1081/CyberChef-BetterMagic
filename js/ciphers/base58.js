@@ -1,5 +1,6 @@
 window.Decoder.registerCipher('Base58', {
     testRegex: /^[1-9A-HJ-NP-Za-km-z\s]+$/,
+    entropyRange: [1.0, 5.9],
     decode: (input) => {
         const ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
         let clean = input.replace(/\s/g, '');

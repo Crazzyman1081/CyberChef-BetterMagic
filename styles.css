@@ -395,6 +395,11 @@ input[type="number"]::-webkit-inner-spin-button {
     animation: spin 1s linear infinite;
 }
 
+.status-indicator.error {
+    color: var(--danger);
+    font-weight: 500;
+}
+
 @keyframes spin {
     to {
         transform: rotate(360deg);

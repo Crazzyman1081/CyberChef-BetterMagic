@@ -1,5 +1,6 @@
 window.Decoder.registerCipher('Hex', {
     testRegex: /^[0-9a-fA-F\s,:;|]+$/,
+    entropyRange: [1.0, 4.5],
     decode: (input) => {
         // Remove delimiters
         let clean = input.replace(/[\s,:;|]/g, '');

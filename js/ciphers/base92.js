@@ -1,5 +1,6 @@
 window.Decoder.registerCipher('Base92', {
     testRegex: /^[!#-_a-}]+$/,
+    entropyRange: [1.0, 6.6],
     decode: (input) => {
         const clean = input;
         if (clean.length === 0) return '';

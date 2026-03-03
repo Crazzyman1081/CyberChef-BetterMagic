@@ -1,5 +1,6 @@
 window.Decoder.registerCipher('Binary', {
     testRegex: /^[01\s,:;|]+$/,
+    entropyRange: [0.0, 3.5],
     decode: (input) => {
         let clean = input.replace(/[\s,:;|]/g, '');
         if (clean.length % 8 !== 0 || clean.length === 0) return null;

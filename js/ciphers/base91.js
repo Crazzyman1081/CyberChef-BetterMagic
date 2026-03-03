@@ -1,5 +1,6 @@
 window.Decoder.registerCipher('Base91', {
     testRegex: /^[A-Za-z0-9!#$%&()*+,./:;<=>?@\[\]^_`{|}~"\s]+$/,
+    entropyRange: [1.0, 6.6],
     decode: (input) => {
         const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!#$%&()*+,./:;<=>?@[]^_`{|}~"';
         let b = 0, n = 0, v = -1;

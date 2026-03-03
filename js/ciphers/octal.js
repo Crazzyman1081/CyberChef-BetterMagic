@@ -1,5 +1,6 @@
 window.Decoder.registerCipher('Octal', {
     testRegex: /^[0-7\s,:;|]+$/,
+    entropyRange: [1.0, 3.8],
     decode: (input) => {
         const parts = input.trim().split(/[\s,:;|]+/);
         if (parts.length === 0 || parts[0] === '') return null;

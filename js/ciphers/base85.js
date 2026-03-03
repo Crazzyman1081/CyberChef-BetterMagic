@@ -1,5 +1,6 @@
 window.Decoder.registerCipher('Base85', {
     testRegex: /^[!-uz~<>\s]+$/,
+    entropyRange: [1.0, 6.5],
     decode: (input) => {
         let res = '';
         let str = input.replace(/\s/g, '').replace(/^<~|~>$/g, '');

@@ -10,6 +10,110 @@ const ASCII_STRUCTURED_OPS = new Set([
     'Hex', 'Binary', 'Decimal', 'Octal'
 ]);
 
+// --- Reusable MinHeap (Fix #2) ---
+// Extracted from the per-depth loop — avoids re-declaring closures every iteration.
+
+class MinHeap {
+    constructor(maxSize) {
+        this._heap = [];
+        this._maxSize = maxSize;
+    }
+
+    get length() { return this._heap.length; }
+    get items() { return this._heap; }
+
+    _swap(i, j) {
+        const t = this._heap[i];
+        this._heap[i] = this._heap[j];
+        this._heap[j] = t;
+    }
+
+    _siftUp(idx) {
+        while (idx > 0) {
+            const parent = (idx - 1) >> 1;
+            if (this._heap[parent].score <= this._heap[idx].score) break;
+            this._swap(parent, idx);
+            idx = parent;
+        }
+    }
+
+    _siftDown(idx) {
+        const len = this._heap.length;
+        while (true) {
+            const left = idx * 2 + 1;
+            const right = left + 1;
+            let smallest = idx;
+            if (left < len && this._heap[left].score < this._heap[smallest].score) smallest = left;
+            if (right < len && this._heap[right].score < this._heap[smallest].score) smallest = right;
+            if (smallest === idx) break;
+            this._swap(idx, smallest);
+            idx = smallest;
+        }
+    }
+
+    push(candidate) {
+        if (this._heap.length < this._maxSize) {
+            this._heap.push(candidate);
+            this._siftUp(this._heap.length - 1);
+            return;
+        }
+        if (candidate.score <= this._heap[0].score) return;
+        this._heap[0] = candidate;
+        this._siftDown(0);
+    }
+
+    // Reset for reuse each depth level (avoids re-allocating)
+    reset() {
+        this._heap.length = 0;
+    }
+
+    drainSorted() {
+        this._heap.sort((a, b) => b.score - a.score);
+        return this._heap.slice(); // Return a copy so reset() doesn't destroy the queue
+    }
+}
+
+// --- Fingerprint-based deduplication (Fix #4) ---
+// Instead of storing full decoded strings in the `seen` set,
+// store a lightweight fingerprint: length + prefix + suffix.
+// Tiny collision risk, massive memory savings on large inputs.
+
+function textFingerprint(text) {
+    const len = text.length;
+    if (len <= 128) return text; // Short strings: store as-is (cheap)
+    return len + ':' + text.slice(0, 64) + ':' + text.slice(-64);
+}
+
+// --- LRU-bounded decode cache (Fix #6) ---
+
+const MAX_CACHE_PER_OP = 1000;
+
+function evictOldest(map) {
+    // Map iteration order is insertion order — delete the first key
+    const firstKey = map.keys().next().value;
+    map.delete(firstKey);
+}
+
+// --- Output validation thresholds ---
+// Decoded output that looks like garbage should not propagate through the search tree.
+const OUTPUT_MIN_PRINTABLE = 0.7;
+const OUTPUT_MAX_ENTROPY = 7.5;
+
+function passesOutputValidation(decodedText) {
+    if (!decodedText || decodedText.length === 0) return false;
+    // Quick printable ratio check
+    const pr = printableRatioSample(decodedText, 512);
+    if (pr < OUTPUT_MIN_PRINTABLE) return false;
+    // Entropy check — very high entropy indicates encrypted/compressed/garbage
+    if (decodedText.length > 16) {
+        const entropy = shannonEntropySample(decodedText, 512);
+        if (entropy > OUTPUT_MAX_ENTROPY) return false;
+    }
+    return true;
+}
+
+// --- Prefilter helpers ---
+
 function printableRatioSample(text, limit = 512) {
     const len = Math.min(text.length, limit);
     if (len === 0) return 1;
@@ -138,7 +242,8 @@ async function runMagic(input, options) {
     const activeOpsKeys = options.activeOps;
     const scoreText = window.Decoder.scoreText;
     const Operations = window.Decoder.Operations;
-    const earlyTerminateScoreThreshold = options.earlyTerminateScoreThreshold || 10000;
+    const CRIB_MATCH_SCORE = window.Decoder.CRIB_MATCH_SCORE; // Fix #1
+    const earlyTerminateScoreThreshold = options.earlyTerminateScoreThreshold || CRIB_MATCH_SCORE;
     const postCribExpansionBudget = options.postCribExpansionBudget || 150;
     const onProgress = typeof options.onProgress === 'function' ? options.onProgress : null;
 
@@ -171,9 +276,9 @@ async function runMagic(input, options) {
 
     const selfInverting = new Set(['Reverse', 'ROT13', 'ROT47', 'ROT8000']);
 
+    // Fix #6 — LRU-bounded decode cache
     const decodeCacheByOp = new Map();
     function getCachedDecode(opName, op, text) {
-        // Avoid storing giant strings in cache keys for very large branches.
         const canCache = text.length <= 50000;
         let opCache = null;
         if (canCache) {
@@ -191,7 +296,12 @@ async function runMagic(input, options) {
         } catch (e) {
             result = null;
         }
-        if (canCache) opCache.set(text, result);
+        if (canCache) {
+            if (opCache.size >= MAX_CACHE_PER_OP) {
+                evictOldest(opCache);
+            }
+            opCache.set(text, result);
+        }
         return result;
     }
 
@@ -230,6 +340,7 @@ async function runMagic(input, options) {
         text: currentText,
         score: scoreText(currentText, crib, input.length)
     }];
+
     const allResults = [];
 
     // If we applied an initial sequence, that result is a valid output branch to show
@@ -237,7 +348,8 @@ async function runMagic(input, options) {
         allResults.push(queue[0]);
     }
 
-    const seen = new Set([currentText]);
+    // Fix #4 — Fingerprint-based seen set
+    const seen = new Set([textFingerprint(currentText)]);
 
     // Dynamic Beam Scaling: Very large texts cannot sustain wide beams.
     const textLen = input.length;
@@ -264,45 +376,12 @@ async function runMagic(input, options) {
     let stopSearch = false;
     if (onProgress) onProgress(0, 0, remainingDepth);
 
+    // Fix #2 — Reuse a single MinHeap instance, reset per depth
+    const beam = new MinHeap(maxBeamSize);
+
     for (let depth = 1; depth <= remainingDepth; depth++) {
         if (queue.length === 0 || stopSearch) break;
-        const beam = [];
-        function swap(i, j) {
-            const t = beam[i];
-            beam[i] = beam[j];
-            beam[j] = t;
-        }
-        function siftUp(idx) {
-            while (idx > 0) {
-                const parent = (idx - 1) >> 1;
-                if (beam[parent].score <= beam[idx].score) break;
-                swap(parent, idx);
-                idx = parent;
-            }
-        }
-        function siftDown(idx) {
-            const len = beam.length;
-            while (true) {
-                const left = idx * 2 + 1;
-                const right = left + 1;
-                let smallest = idx;
-                if (left < len && beam[left].score < beam[smallest].score) smallest = left;
-                if (right < len && beam[right].score < beam[smallest].score) smallest = right;
-                if (smallest === idx) break;
-                swap(idx, smallest);
-                idx = smallest;
-            }
-        }
-        function addToBeam(candidate) {
-            if (beam.length < maxBeamSize) {
-                beam.push(candidate);
-                siftUp(beam.length - 1);
-                return;
-            }
-            if (candidate.score <= beam[0].score) return;
-            beam[0] = candidate;
-            siftDown(0);
-        }
+        beam.reset();
 
         for (let q = 0; q < queue.length; q++) {
             const item = queue[q];
@@ -342,12 +421,22 @@ async function runMagic(input, options) {
                 if (!passesBranchPrefilter(opName, testPrefix)) continue;
                 if (op.testRegex && !op.testRegex.test(testPrefix)) continue;
 
+                // Entropy-based input pruning: skip if parent text entropy is outside
+                // the cipher's declared range (e.g. Base64 expects entropy 1.0-6.1)
+                if (op.entropyRange) {
+                    const inputEntropy = shannonEntropySample(testPrefix, 512);
+                    if (inputEntropy < op.entropyRange[0] || inputEntropy > op.entropyRange[1]) {
+                        continue;
+                    }
+                }
+
                 if (op.isMulti) {
                     const multiRes = getCachedDecode(opName, op, parentText);
                     if (multiRes) {
                         for (const m of multiRes) {
-                            if (!seen.has(m.value) && m.value !== parentText) {
-                                seen.add(m.value);
+                            const fp = textFingerprint(m.value);
+                            if (!seen.has(fp) && m.value !== parentText && passesOutputValidation(m.value)) {
+                                seen.add(fp);
                                 const score = scoreText(m.value, crib, parentLen);
                                 const candidate = {
                                     pathNode: createPathNode(item.pathNode, m.op),
@@ -356,7 +445,7 @@ async function runMagic(input, options) {
                                     text: m.value,
                                     score: score
                                 };
-                                addToBeam(candidate);
+                                beam.push(candidate);
                                 allResults.push(candidate);
                                 if (crib && !earlyTerminateTriggered && score >= earlyTerminateScoreThreshold) {
                                     earlyTerminateTriggered = true;
@@ -367,29 +456,31 @@ async function runMagic(input, options) {
                     }
                 } else {
                     const dec = getCachedDecode(opName, op, parentText);
-                    if (dec && dec !== parentText && !seen.has(dec)) {
-                        seen.add(dec);
-                        const score = scoreText(dec, crib, parentLen);
-                        const candidate = {
-                            pathNode: createPathNode(item.pathNode, opName),
-                            pathLen: item.pathLen + 1,
-                            lastOp: opName,
-                            text: dec,
-                            score: score
-                        };
-                        addToBeam(candidate);
-                        allResults.push(candidate);
-                        if (crib && !earlyTerminateTriggered && score >= earlyTerminateScoreThreshold) {
-                            earlyTerminateTriggered = true;
-                            expansionsRemaining = postCribExpansionBudget;
+                    if (dec && dec !== parentText) {
+                        const fp = textFingerprint(dec);
+                        if (!seen.has(fp) && passesOutputValidation(dec)) {
+                            seen.add(fp);
+                            const score = scoreText(dec, crib, parentLen);
+                            const candidate = {
+                                pathNode: createPathNode(item.pathNode, opName),
+                                pathLen: item.pathLen + 1,
+                                lastOp: opName,
+                                text: dec,
+                                score: score
+                            };
+                            beam.push(candidate);
+                            allResults.push(candidate);
+                            if (crib && !earlyTerminateTriggered && score >= earlyTerminateScoreThreshold) {
+                                earlyTerminateTriggered = true;
+                                expansionsRemaining = postCribExpansionBudget;
+                            }
                         }
                     }
                 }
             }
         }
 
-        beam.sort((a, b) => b.score - a.score);
-        queue = beam;
+        queue = beam.drainSorted();
         if (onProgress) onProgress(depth / remainingDepth, depth, remainingDepth);
 
         await yieldToUI();
@@ -425,6 +516,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const operationsToggles = document.getElementById('operations-toggles');
     const resultTemplate = document.getElementById('result-card-template');
 
+    const CRIB_MATCH_SCORE = window.Decoder.CRIB_MATCH_SCORE; // Fix #1
+
+    // Fix #9 — helper to set empty-state text via DOM APIs instead of innerHTML
+    function setEmptyState(container, message) {
+        container.innerHTML = '';
+        const div = document.createElement('div');
+        div.className = 'empty-state';
+        div.textContent = message;
+        container.appendChild(div);
+    }
+
     // Generate checkboxes from Registry
     const Operations = window.Decoder.Operations;
     const toggleCheckboxes = {};
@@ -445,7 +547,7 @@ document.addEventListener('DOMContentLoaded', () => {
     btnClear.addEventListener('click', () => {
         inputText.value = '';
         cribText.value = '';
-        outputContainer.innerHTML = '<div class="empty-state">Enter text and choose an operation to begin.</div>';
+        setEmptyState(outputContainer, 'Enter text and choose an operation to begin.');
         statusIndicator.textContent = 'Ready';
         statusIndicator.className = 'status-indicator';
         if (progressWrap) progressWrap.classList.add('hidden');
@@ -456,7 +558,7 @@ document.addEventListener('DOMContentLoaded', () => {
         outputContainer.innerHTML = '';
 
         if (!results || results.length === 0) {
-            outputContainer.innerHTML = '<div class="empty-state">No decodes yielded printable text.</div>';
+            setEmptyState(outputContainer, 'No decodes yielded printable text.');
             return;
         }
 
@@ -466,13 +568,16 @@ document.addEventListener('DOMContentLoaded', () => {
             const clone = resultTemplate.content.cloneNode(true);
             const pathContainer = clone.querySelector('.path-badges');
 
-            res.path.forEach((p, idx) => {
+            // Fix #8 — Guard against unmaterialized paths
+            const pathArr = res.path || ['Unknown'];
+
+            pathArr.forEach((p, idx) => {
                 const badge = document.createElement('span');
                 badge.className = 'path-badge';
                 badge.textContent = p;
                 pathContainer.appendChild(badge);
 
-                if (idx < res.path.length - 1) {
+                if (idx < pathArr.length - 1) {
                     const arrow = document.createElement('span');
                     arrow.className = 'path-arrow';
                     arrow.textContent = '→';
@@ -484,10 +589,13 @@ document.addEventListener('DOMContentLoaded', () => {
             if (isAllDecodes) {
                 scoreSpan.style.display = 'none';
             } else {
-                const scoreFormat = res.score > 9000 ? '10000 (Crib Match)' : res.score.toFixed(2);
+                // Fix #1 — Use shared constant instead of magic number
+                const scoreFormat = res.score >= CRIB_MATCH_SCORE
+                    ? `${CRIB_MATCH_SCORE} (Crib Match)`
+                    : res.score.toFixed(2);
                 scoreSpan.querySelector('.score-value').textContent = scoreFormat;
 
-                if (res.score > 9000) scoreSpan.classList.add('high');
+                if (res.score >= CRIB_MATCH_SCORE) scoreSpan.classList.add('high');
                 else if (res.score < 0) scoreSpan.classList.add('low');
             }
 
@@ -501,12 +609,15 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // Fix #5 — Replace setTimeout wrapper with await yieldToUI()
     async function process(action) {
         const input = inputText.value.trim();
         const crib = cribText.value.trim();
 
+        // Fix #7 — Inline status message instead of blocking alert()
         if (!input) {
-            alert("Please enter input text.");
+            statusIndicator.textContent = 'Please enter input text.';
+            statusIndicator.className = 'status-indicator error';
             return;
         }
 
@@ -515,56 +626,57 @@ document.addEventListener('DOMContentLoaded', () => {
         if (progressWrap) progressWrap.classList.toggle('hidden', action !== 'magic');
         if (progressBar) progressBar.style.width = '0%';
 
-        setTimeout(async () => {
-            const startTime = performance.now();
-            let results = [];
-            let magicDepth = parseInt(magicDepthInput.value) || 10;
+        // Yield to let the UI update before heavy computation
+        await yieldToUI();
 
-            const activeOps = Object.keys(toggleCheckboxes).filter(op => toggleCheckboxes[op].checked);
+        const startTime = performance.now();
+        let results = [];
+        let magicDepth = parseInt(magicDepthInput.value) || 10;
 
-            let initialSeq = [];
-            const seqVal = initialSequenceInput.value.trim();
-            if (seqVal) {
-                const opLookup = {};
-                for (const opName of Object.keys(Operations)) {
-                    opLookup[opName.toLowerCase()] = opName;
+        const activeOps = Object.keys(toggleCheckboxes).filter(op => toggleCheckboxes[op].checked);
+
+        let initialSeq = [];
+        const seqVal = initialSequenceInput.value.trim();
+        if (seqVal) {
+            const opLookup = {};
+            for (const opName of Object.keys(Operations)) {
+                opLookup[opName.toLowerCase()] = opName;
+            }
+            initialSeq = seqVal
+                .split(/[,\s]+/)
+                .map(s => s.trim().toLowerCase())
+                .filter(Boolean)
+                .map(s => opLookup[s])
+                .filter(Boolean);
+        }
+
+        const options = {
+            crib: crib,
+            maxDepth: magicDepth,
+            activeOps: activeOps,
+            initialSequence: initialSeq,
+            onProgress: action === 'magic' ? (fraction, depth, totalDepth) => {
+                if (progressBar) {
+                    const pct = Math.max(0, Math.min(100, Math.round(fraction * 100)));
+                    progressBar.style.width = `${pct}%`;
                 }
-                initialSeq = seqVal
-                    .split(/[,\s]+/)
-                    .map(s => s.trim().toLowerCase())
-                    .filter(Boolean)
-                    .map(s => opLookup[s])
-                    .filter(Boolean);
-            }
+                statusIndicator.textContent = `Processing... (${depth}/${totalDepth})`;
+            } : null
+        };
 
-            const options = {
-                crib: crib,
-                maxDepth: magicDepth,
-                activeOps: activeOps,
-                initialSequence: initialSeq,
-                onProgress: action === 'magic' ? (fraction, depth, totalDepth) => {
-                    if (progressBar) {
-                        const pct = Math.max(0, Math.min(100, Math.round(fraction * 100)));
-                        progressBar.style.width = `${pct}%`;
-                    }
-                    statusIndicator.textContent = `Processing... (${depth}/${totalDepth})`;
-                } : null
-            };
+        if (action === 'all') {
+            results = await runAllDecodes(input, options);
+        } else if (action === 'magic') {
+            results = await runMagic(input, options);
+        }
 
-            if (action === 'all') {
-                results = await runAllDecodes(input, options);
-            } else if (action === 'magic') {
-                results = await runMagic(input, options);
-            }
+        displayResults(results, action === 'all');
 
-            displayResults(results, action === 'all');
-
-            const elapsed = (performance.now() - startTime).toFixed(1);
-            statusIndicator.textContent = `Done (${results.length} results, ${elapsed}ms)`;
-            statusIndicator.className = 'status-indicator';
-            if (progressBar) progressBar.style.width = '100%';
-            if (progressWrap) progressWrap.classList.add('hidden');
-        }, 50);
+        const elapsed = (performance.now() - startTime).toFixed(1);
+        statusIndicator.textContent = `Done (${results.length} results, ${elapsed}ms)`;
+        statusIndicator.className = 'status-indicator';
+        if (progressBar) progressBar.style.width = '100%';
+        if (progressWrap) progressWrap.classList.add('hidden');
     }
 
     btnAllDecodes.addEventListener('click', () => process('all'));

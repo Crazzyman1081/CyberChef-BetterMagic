@@ -1,5 +1,6 @@
 window.Decoder.registerCipher('Decimal', {
     testRegex: /^[0-9\s,:;|]+$/,
+    entropyRange: [1.0, 4.0],
     decode: (input) => {
         const parts = input.trim().split(/[\s,:;|]+/);
         if (parts.length === 0 || parts[0] === '') return null;
