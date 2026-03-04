@@ -5,6 +5,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BetterMagic</title>
+    <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; font-src https://fonts.gstatic.com; img-src 'self' data:;">
     <link rel="stylesheet" href="styles.css">
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap"
@@ -85,6 +87,15 @@
                             <input type="number" id="magic-depth" value="5" min="1" max="10">
                         </div>
                     </div>
+                    <div class="crazy-mode-row">
+                        <label class="crazy-mode-toggle" for="crazy-mode-toggle">
+                            <input type="checkbox" id="crazy-mode-toggle">
+                            Crazy Mode (exhaustive)
+                        </label>
+                        <div class="info-icon-wrapper" id="crazy-info-icon">
+                            <span class="info-icon">ⓘ</span>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="button-group">
@@ -114,6 +125,12 @@
                     <h2>Output</h2>
                     <div id="status-indicator" class="status-indicator">Ready</div>
                 </div>
+                <div class="results-tabs" role="tablist" aria-label="Results view tabs">
+                    <button id="tab-output" class="results-tab active" type="button" role="tab"
+                        aria-selected="true">Results</button>
+                    <button id="tab-visualizer" class="results-tab" type="button" role="tab"
+                        aria-selected="false">Visualizer</button>
+                </div>
                 <div id="progress-wrap" class="progress-wrap hidden" aria-hidden="true">
                     <div class="progress-track">
                         <div id="progress-bar" class="progress-bar"></div>
@@ -123,6 +140,34 @@
                     <div class="empty-state">
                         Enter text and choose an operation to begin.
                     </div>
+                </div>
+                <div id="visualizer-panel" class="visualizer-panel hidden" aria-live="polite">
+                    <div class="visualizer-toolbar">
+                        <div class="visualizer-toolbar-top">
+                            <div id="visualizer-stats" class="visualizer-stats">Run Smart Magic Search to generate a
+                                graph.</div>
+                            <button id="visualizer-fullscreen-btn" class="visualizer-btn" type="button"
+                                aria-label="Toggle full screen visualizer">Full Screen</button>
+                        </div>
+                        <div class="visualizer-search">
+                            <input id="vis-search-chain" class="visualizer-search-input" type="text"
+                                placeholder="Chain prefix (e.g. Base64 -> Hex)">
+                            <input id="vis-search-crib" class="visualizer-search-input" type="text"
+                                placeholder="Crib in decoded text">
+                            <button id="vis-search-btn" class="visualizer-btn" type="button">Search</button>
+                            <button id="vis-search-next-btn" class="visualizer-btn" type="button">Next</button>
+                            <button id="vis-search-clear-btn" class="visualizer-btn" type="button">Clear</button>
+                        </div>
+                        <div id="visualizer-ops" class="visualizer-ops"></div>
+                    </div>
+                    <div id="visualizer-viewport" class="visualizer-viewport">
+                        <svg id="visualizer-svg" class="visualizer-svg" viewBox="0 0 1000 600"
+                            preserveAspectRatio="xMidYMid meet">
+                            <g id="visualizer-graph"></g>
+                        </svg>
+                    </div>
+                    <div id="visualizer-node-info" class="visualizer-node-info">Hover or click a node to inspect a
+                        branch.</div>
                 </div>
             </section>
         </main>
@@ -137,13 +182,21 @@
                     <span class="score-badge">Score: <span class="score-value">0</span></span>
                 </div>
             </div>
-            <textarea class="result-text" readonly></textarea>
+            <div class="result-text-wrap">
+                <button class="copy-result-btn" type="button" aria-label="Copy decoded output">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <rect x="9" y="9" width="11" height="11" rx="2" ry="2"></rect>
+                        <rect x="4" y="4" width="11" height="11" rx="2" ry="2"></rect>
+                    </svg>
+                </button>
+                <textarea class="result-text" readonly></textarea>
+            </div>
         </div>
     </template>
 
     <!-- Global Tooltip for escaping scroll containers -->
     <div id="global-info-tooltip" class="global-tooltip glowing-blue">
-        <strong>Special Cipher limitation:</strong><br>
+        <strong>Special Cipher limitation:</strong>
         This slows down the program a lot, so it's off by default<br><br>
 
         <strong>Empty key</strong> 256 keys brute force.<br> <br>
@@ -151,6 +204,17 @@
 
         <strong>Tip</strong>If you find a good candidate, you can run it through the decoder again. This helps guess
         if multiple unique XOR keys (single byte) were applied sequentially
+    </div>
+
+    <div id="global-crazy-tooltip" class="global-tooltip glowing-blue">
+        <strong>Crazy Mode (crib-first exhaustive hunt)</strong><br><br>
+        <strong>Crib optional:</strong> If provided, mode can stop early when crib is found.<br><br>
+        <strong>Goal:</strong> Keeps exploring deeper chains until search frontier is exhausted.<br><br>
+        <strong>XOR behavior:</strong> Allows sequential XOR branches with different keys (unlike normal mode).<br><br>
+        <strong>Long-run safety:</strong> Uses bounded frontier + bounded seen-cache to avoid unbounded memory
+        growth.<br><br>
+        <strong>Live updates:</strong> Refreshes top candidates every ~10 seconds while running.<br><br>
+        <strong>Visualizer:</strong> Disabled during Crazy Mode to prioritize search throughput.
     </div>
 
     <!-- Modules -->
@@ -175,9 +239,11 @@
     <script src="js/ciphers/rot47.js"></script>
     <script src="js/ciphers/rot8000.js"></script>
     <script src="js/ciphers/xor.js"></script>
+    <script src="js/crazy.js"></script>
 
     <!-- Main App -->
     <script src="app.js"></script>
+    <script src="js/ui.js"></script>
 </body>
 
 </html>

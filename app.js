@@ -74,14 +74,14 @@ class MinHeap {
 }
 
 // --- Fingerprint-based deduplication (Fix #4) ---
-// Instead of storing full decoded strings in the `seen` set,
-// store a lightweight fingerprint: length + prefix + suffix.
-// Tiny collision risk, massive memory savings on large inputs.
+// Lightweight fingerprint: length + prefix + middle + suffix.
+// Adding a middle sample reduces collision risk vs prefix+suffix only.
 
 function textFingerprint(text) {
     const len = text.length;
-    if (len <= 128) return text; // Short strings: store as-is (cheap)
-    return len + ':' + text.slice(0, 64) + ':' + text.slice(-64);
+    if (len <= 128) return text; // Short strings: store as-is
+    const mid = Math.max(0, (len >>> 1) - 32);
+    return len + ':' + text.slice(0, 64) + ':' + text.slice(mid, mid + 64) + ':' + text.slice(-64);
 }
 
 // --- LRU-bounded decode cache (Fix #6) ---
@@ -94,55 +94,37 @@ function evictOldest(map) {
     map.delete(firstKey);
 }
 
-// --- Output validation thresholds ---
+// --- Search configuration constants ---
+const SEARCH_CONFIG = {
+    OUTPUT_MIN_PRINTABLE: 0.7,
+    OUTPUT_MAX_ENTROPY: 7.5,
+    MAX_BRANCH_TEXT_LEN: 500000,
+    TEST_PREFIX_LEN: 5000,
+    COMPRESSION_RATIO_CAP: 5,
+    PRINTABLE_RATIO_THRESHOLD: 0.95,
+    SCORE_SAMPLE_LEN: 512
+};
+
+// --- Import helpers from scoring.js (avoid duplication) ---
+const printableRatioSample = window.Decoder.printableRatioSample;
+const shannonEntropySample = window.Decoder.shannonEntropySample;
+
+// --- Output validation ---
 // Decoded output that looks like garbage should not propagate through the search tree.
-const OUTPUT_MIN_PRINTABLE = 0.7;
-const OUTPUT_MAX_ENTROPY = 7.5;
 
 function passesOutputValidation(decodedText) {
     if (!decodedText || decodedText.length === 0) return false;
-    // Quick printable ratio check
-    const pr = printableRatioSample(decodedText, 512);
-    if (pr < OUTPUT_MIN_PRINTABLE) return false;
-    // Entropy check — very high entropy indicates encrypted/compressed/garbage
+    const pr = printableRatioSample(decodedText, SEARCH_CONFIG.SCORE_SAMPLE_LEN);
+    if (pr < SEARCH_CONFIG.OUTPUT_MIN_PRINTABLE) return false;
     if (decodedText.length > 16) {
-        const entropy = shannonEntropySample(decodedText, 512);
-        if (entropy > OUTPUT_MAX_ENTROPY) return false;
+        const entropy = shannonEntropySample(decodedText, SEARCH_CONFIG.SCORE_SAMPLE_LEN);
+        if (entropy > SEARCH_CONFIG.OUTPUT_MAX_ENTROPY) return false;
     }
     return true;
 }
 
-// --- Prefilter helpers ---
-
-function printableRatioSample(text, limit = 512) {
-    const len = Math.min(text.length, limit);
-    if (len === 0) return 1;
-    let printable = 0;
-    for (let i = 0; i < len; i++) {
-        const c = text.charCodeAt(i);
-        if (c >= 32 && c <= 126) printable++;
-    }
-    return printable / len;
-}
-
-function shannonEntropySample(text, limit = 256) {
-    const len = Math.min(text.length, limit);
-    if (len === 0) return 0;
-    const counts = new Map();
-    for (let i = 0; i < len; i++) {
-        const ch = text[i];
-        counts.set(ch, (counts.get(ch) || 0) + 1);
-    }
-    let h = 0;
-    for (const n of counts.values()) {
-        const p = n / len;
-        h -= p * Math.log2(p);
-    }
-    return h;
-}
-
 function passesBranchPrefilter(opName, textPrefix) {
-    if (ASCII_STRUCTURED_OPS.has(opName) && printableRatioSample(textPrefix) < 0.95) {
+    if (ASCII_STRUCTURED_OPS.has(opName) && printableRatioSample(textPrefix) < SEARCH_CONFIG.PRINTABLE_RATIO_THRESHOLD) {
         return false;
     }
 
@@ -200,6 +182,8 @@ function passesBranchPrefilter(opName, textPrefix) {
 
     return true;
 }
+
+const SELF_INVERTING_OPS = new Set(['Reverse', 'ROT13', 'ROT47', 'ROT8000']);
 
 // --- Search Logic ---
 
@@ -274,8 +258,6 @@ async function runMagic(input, options) {
         return []; // Initial sequence resulted in invalid decode
     }
 
-    const selfInverting = new Set(['Reverse', 'ROT13', 'ROT47', 'ROT8000']);
-
     // Fix #6 — LRU-bounded decode cache
     const decodeCacheByOp = new Map();
     function getCachedDecode(opName, op, text, optionsObj = {}) {
@@ -298,6 +280,10 @@ async function runMagic(input, options) {
             if (opCache.size >= MAX_CACHE_PER_OP) {
                 evictOldest(opCache);
             }
+            opCache.set(cacheKey, result);
+        } else {
+            // True LRU behavior: refresh recency on cache hit
+            opCache.delete(cacheKey);
             opCache.set(cacheKey, result);
         }
         return result;
@@ -333,6 +319,7 @@ async function runMagic(input, options) {
     const startPathNode = pathFromArray(startingPath);
     let queue = [{
         pathNode: startPathNode,
+        normOps: startingPath.slice(),
         pathLen: startingPath.length,
         lastOp: startingPath.length > 0 ? startingPath[startingPath.length - 1] : '',
         text: currentText,
@@ -401,17 +388,18 @@ async function runMagic(input, options) {
 
             const parentText = item.text;
             const parentLen = parentText.length;
-            if (parentLen > 500000) continue; // Avoid regex/decode blowups on extremely large branches
+            if (parentLen > SEARCH_CONFIG.MAX_BRANCH_TEXT_LEN) continue; // Avoid regex/decode blowups on extremely large branches
 
-            const testPrefix = parentLen > 5000 ? parentText.slice(0, 5000) : parentText;
+            const testPrefix = parentLen > SEARCH_CONFIG.TEST_PREFIX_LEN ? parentText.slice(0, SEARCH_CONFIG.TEST_PREFIX_LEN) : parentText;
             const parentLastOp = item.lastOp;
+            const inputEntropy = shannonEntropySample(testPrefix, 512);
 
             // Generate next states
             for (let i = 0; i < opsToUse.length; i++) {
                 const opName = opsToUse[i].name;
                 const op = opsToUse[i].op;
                 // Prevent immediate reversible loops (only block self-inverting operations from running consecutively)
-                if (selfInverting.has(opName) && parentLastOp === opName) {
+                if (SELF_INVERTING_OPS.has(opName) && parentLastOp === opName) {
                     continue; // Skip decoding the same base twice in a row if it undoes itself
                 }
 
@@ -422,7 +410,6 @@ async function runMagic(input, options) {
                 // Entropy-based input pruning: skip if parent text entropy is outside
                 // the cipher's declared range (e.g. Base64 expects entropy 1.0-6.1)
                 if (op.entropyRange) {
-                    const inputEntropy = shannonEntropySample(testPrefix, 512);
                     if (inputEntropy < op.entropyRange[0] || inputEntropy > op.entropyRange[1]) {
                         continue;
                     }
@@ -450,11 +437,13 @@ async function runMagic(input, options) {
                             }
 
                             const fp = textFingerprint(m.value);
+                            const normOps = item.normOps.concat(m.op);
                             if (!seen.has(fp) && m.value !== parentText && passesOutputValidation(m.value)) {
                                 seen.add(fp);
                                 const score = scoreText(m.value, crib, parentLen);
                                 const candidate = {
                                     pathNode: createPathNode(item.pathNode, m.op),
+                                    normOps: normOps,
                                     pathLen: item.pathLen + 1,
                                     lastOp: m.op,
                                     text: m.value,
@@ -473,11 +462,13 @@ async function runMagic(input, options) {
                     const dec = getCachedDecode(opName, op, parentText);
                     if (dec && dec !== parentText) {
                         const fp = textFingerprint(dec);
+                        const normOps = item.normOps.concat(opName);
                         if (!seen.has(fp) && passesOutputValidation(dec)) {
                             seen.add(fp);
                             const score = scoreText(dec, crib, parentLen);
                             const candidate = {
                                 pathNode: createPathNode(item.pathNode, opName),
+                                normOps: normOps,
                                 pathLen: item.pathLen + 1,
                                 lastOp: opName,
                                 text: dec,
@@ -508,235 +499,33 @@ async function runMagic(input, options) {
         Math.max(0, options.resultPathMaterializeLimit ?? 30)
     );
     for (let i = 0; i < pathMaterializeLimit; i++) {
-        allResults[i].path = materializePath(allResults[i].pathNode);
+        allResults[i].path = Array.isArray(allResults[i].normOps)
+            ? allResults[i].normOps.slice()
+            : materializePath(allResults[i].pathNode);
     }
     if (onProgress) onProgress(1, remainingDepth, remainingDepth);
     return allResults;
 }
 
+const runCrazyMagic = (window.DecoderCrazy && typeof window.DecoderCrazy.createRunCrazyMagic === 'function')
+    ? window.DecoderCrazy.createRunCrazyMagic({
+        yieldToUI,
+        textFingerprint,
+        shannonEntropySample,
+        passesBranchPrefilter,
+        passesOutputValidation,
+        SELF_INVERTING_OPS
+    })
+    : async function () {
+        throw new Error('Crazy mode module not loaded (missing js/crazy.js).');
+    };
+
 // --- UI Binding ---
 
-document.addEventListener('DOMContentLoaded', () => {
-    const inputText = document.getElementById('input-text');
-    const cribText = document.getElementById('crib-text');
-    const btnAllDecodes = document.getElementById('btn-all-decodes');
-    const btnMagic = document.getElementById('btn-magic');
-    const btnClear = document.getElementById('btn-clear');
-    const outputContainer = document.getElementById('output-container');
-    const statusIndicator = document.getElementById('status-indicator');
-    const progressWrap = document.getElementById('progress-wrap');
-    const progressBar = document.getElementById('progress-bar');
-    const magicDepthInput = document.getElementById('magic-depth');
-    const initialSequenceInput = document.getElementById('initial-sequence');
-    const operationsToggles = document.getElementById('operations-toggles');
-    const resultTemplate = document.getElementById('result-card-template');
 
-    const CRIB_MATCH_SCORE = window.Decoder.CRIB_MATCH_SCORE; // Fix #1
-
-    // Fix #9 — helper to set empty-state text via DOM APIs instead of innerHTML
-    function setEmptyState(container, message) {
-        container.innerHTML = '';
-        const div = document.createElement('div');
-        div.className = 'empty-state';
-        div.textContent = message;
-        container.appendChild(div);
-    }
-
-    // Generate checkboxes from Registry
-    const Operations = window.Decoder.Operations;
-    const toggleCheckboxes = {};
-
-    // Grab the hardcoded XOR toggle that we placed in index.html
-    const xorCb = document.getElementById('xor-toggle');
-    if (xorCb) {
-        toggleCheckboxes['XOR'] = xorCb;
-    }
-
-    for (const opName of Object.keys(Operations)) {
-        if (opName === 'XOR') {
-            continue; // Already handled above
-        }
-        const label = document.createElement('label');
-        label.className = 'toggle-label';
-        const cb = document.createElement('input');
-        cb.type = 'checkbox';
-        cb.value = opName;
-        cb.checked = Operations[opName].defaultActive !== undefined ? Operations[opName].defaultActive : true;
-        label.appendChild(cb);
-        label.appendChild(document.createTextNode(' ' + opName));
-        operationsToggles.appendChild(label);
-        toggleCheckboxes[opName] = cb;
-    }
-
-    // Buttons setup
-    btnClear.addEventListener('click', () => {
-        inputText.value = '';
-        cribText.value = '';
-        setEmptyState(outputContainer, 'Enter text and choose an operation to begin.');
-        statusIndicator.textContent = 'Ready';
-        statusIndicator.className = 'status-indicator';
-        if (progressWrap) progressWrap.classList.add('hidden');
-        if (progressBar) progressBar.style.width = '0%';
-    });
-
-    // Custom Tooltip Logic to escape scroll bounds
-    const infoIconWrapper = document.querySelector('.info-icon-wrapper');
-    const globalTooltip = document.getElementById('global-info-tooltip');
-
-    if (infoIconWrapper && globalTooltip) {
-        infoIconWrapper.addEventListener('mouseenter', () => {
-            globalTooltip.classList.add('visible');
-        });
-
-        infoIconWrapper.addEventListener('mousemove', (e) => {
-            // Position tooltip near the cursor, offset slightly
-            const tooltipWidth = 260;
-            // Ensure tooltip doesn't bleed off the right edge of the window
-            let leftPos = e.clientX + 15;
-            if (leftPos + tooltipWidth > window.innerWidth) {
-                leftPos = e.clientX - tooltipWidth - 10;
-            }
-            globalTooltip.style.left = leftPos + 'px';
-            globalTooltip.style.top = (e.clientY - 40) + 'px';
-        });
-
-        infoIconWrapper.addEventListener('mouseleave', () => {
-            globalTooltip.classList.remove('visible');
-        });
-    }
-
-    function displayResults(results, isAllDecodes = false) {
-        outputContainer.innerHTML = '';
-
-        if (!results || results.length === 0) {
-            setEmptyState(outputContainer, 'No decodes yielded printable text.');
-            return;
-        }
-
-        const toShow = results.slice(0, 30);
-
-        toShow.forEach(res => {
-            const clone = resultTemplate.content.cloneNode(true);
-            const pathContainer = clone.querySelector('.path-badges');
-
-            // Fix #8 — Guard against unmaterialized paths
-            const pathArr = res.path || ['Unknown'];
-
-            pathArr.forEach((p, idx) => {
-                const badge = document.createElement('span');
-                badge.className = 'path-badge';
-                badge.textContent = p;
-                pathContainer.appendChild(badge);
-
-                if (idx < pathArr.length - 1) {
-                    const arrow = document.createElement('span');
-                    arrow.className = 'path-arrow';
-                    arrow.textContent = '→';
-                    pathContainer.appendChild(arrow);
-                }
-            });
-
-            const scoreSpan = clone.querySelector('.score-badge');
-            if (isAllDecodes) {
-                scoreSpan.style.display = 'none';
-            } else {
-                // Fix #1 — Use shared constant instead of magic number
-                const scoreFormat = res.score >= CRIB_MATCH_SCORE
-                    ? `${CRIB_MATCH_SCORE} (Crib Match)`
-                    : res.score.toFixed(2);
-                scoreSpan.querySelector('.score-value').textContent = scoreFormat;
-
-                if (res.score >= CRIB_MATCH_SCORE) scoreSpan.classList.add('high');
-                else if (res.score < 0) scoreSpan.classList.add('low');
-            }
-
-            const textarea = clone.querySelector('textarea');
-            textarea.value = res.text;
-            if (res.isError) {
-                textarea.style.color = 'var(--danger)';
-                textarea.style.fontStyle = 'italic';
-            }
-            outputContainer.appendChild(clone);
-        });
-    }
-
-    // Fix #5 — Replace setTimeout wrapper with await yieldToUI()
-    async function process(action) {
-        const input = inputText.value.trim();
-        const crib = cribText.value.trim();
-
-        // Fix #7 — Inline status message instead of blocking alert()
-        if (!input) {
-            statusIndicator.textContent = 'Please enter input text.';
-            statusIndicator.className = 'status-indicator error';
-            return;
-        }
-
-        statusIndicator.textContent = 'Processing...';
-        statusIndicator.className = 'status-indicator loading';
-        if (progressWrap) progressWrap.classList.toggle('hidden', action !== 'magic');
-        if (progressBar) progressBar.style.width = '0%';
-
-        // Yield to let the UI update before heavy computation
-        await yieldToUI();
-
-        const startTime = performance.now();
-        let results = [];
-        let magicDepth = parseInt(magicDepthInput.value) || 10;
-
-        const activeOps = Object.keys(toggleCheckboxes).filter(op => toggleCheckboxes[op].checked);
-
-        let initialSeq = [];
-        const seqVal = initialSequenceInput.value.trim();
-        if (seqVal) {
-            const opLookup = {};
-            for (const opName of Object.keys(Operations)) {
-                opLookup[opName.toLowerCase()] = opName;
-            }
-            initialSeq = seqVal
-                .split(/[,\s]+/)
-                .map(s => s.trim().toLowerCase())
-                .filter(Boolean)
-                .map(s => opLookup[s])
-                .filter(Boolean);
-        }
-
-        const xorKeyUI = document.getElementById('xor-key');
-        const xorKeyTypeUI = document.getElementById('xor-key-type');
-        const xorKeyVal = xorKeyUI ? xorKeyUI.value.trim() : '';
-        const xorKeyTypeVal = xorKeyTypeUI ? xorKeyTypeUI.value : 'utf8';
-
-        const options = {
-            crib: crib,
-            maxDepth: magicDepth,
-            activeOps: activeOps,
-            initialSequence: initialSeq,
-            xorKey: xorKeyVal,
-            xorKeyType: xorKeyTypeVal,
-            onProgress: action === 'magic' ? (fraction, depth, totalDepth) => {
-                if (progressBar) {
-                    const pct = Math.max(0, Math.min(100, Math.round(fraction * 100)));
-                    progressBar.style.width = `${pct}%`;
-                }
-                statusIndicator.textContent = `Processing... (${depth}/${totalDepth})`;
-            } : null
-        };
-
-        if (action === 'all') {
-            results = await runAllDecodes(input, options);
-        } else if (action === 'magic') {
-            results = await runMagic(input, options);
-        }
-
-        displayResults(results, action === 'all');
-
-        const elapsed = (performance.now() - startTime).toFixed(1);
-        statusIndicator.textContent = `Done (${results.length} results, ${elapsed}ms)`;
-        statusIndicator.className = 'status-indicator';
-        if (progressBar) progressBar.style.width = '100%';
-        if (progressWrap) progressWrap.classList.add('hidden');
-    }
-
-    btnAllDecodes.addEventListener('click', () => process('all'));
-    btnMagic.addEventListener('click', () => process('magic'));
-});
+// Expose core search APIs for UI and tooling.
+window.DecoderApp = {
+    runAllDecodes,
+    runMagic,
+    runCrazyMagic
+};

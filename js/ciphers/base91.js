@@ -1,13 +1,18 @@
+const BASE91_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!#$%&()*+,./:;<=>?@[]^_`{|}~"';
+const BASE91_MAP = {};
+for (let i = 0; i < BASE91_ALPHABET.length; i++) {
+    BASE91_MAP[BASE91_ALPHABET[i]] = i;
+}
+
 window.Decoder.registerCipher('Base91', {
     testRegex: /^[A-Za-z0-9!#$%&()*+,./:;<=>?@\[\]^_`{|}~"\s]+$/,
     entropyRange: [1.0, 6.6],
     decode: (input) => {
-        const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!#$%&()*+,./:;<=>?@[]^_`{|}~"';
         let b = 0, n = 0, v = -1;
-        let res = [];
+        const res = [];
         for (let i = 0; i < input.length; i++) {
-            let p = ALPHABET.indexOf(input[i]);
-            if (p === -1) continue;
+            const p = BASE91_MAP[input[i]];
+            if (p === undefined) continue;
             if (v < 0) {
                 v = p;
             } else {

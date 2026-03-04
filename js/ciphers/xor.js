@@ -20,24 +20,21 @@ window.Decoder.registerCipher('XOR', {
                 if (cleanHex.length > 0 && cleanHex.length % 2 === 0) {
                     const keyBytes = [];
                     for (let i = 0; i < cleanHex.length; i += 2) {
-                        keyBytes.push(parseInt(cleanHex.substr(i, 2), 16));
+                        keyBytes.push(parseInt(cleanHex.slice(i, i + 2), 16));
                     }
                     keysToTry.push(keyBytes);
                     explicitKeyName = `Hex:${cleanHex}`;
                 }
             } else { // utf8
-                const keyBytes = [];
-                for (let i = 0; i < keyStr.length; i++) {
-                    // For simplicity, just use charCode. Real UTF-8 would encode multi-byte.
-                    keyBytes.push(keyStr.charCodeAt(i) & 0xff);
-                }
+                const keyBytes = Array.from(new TextEncoder().encode(keyStr));
                 keysToTry.push(keyBytes);
                 explicitKeyName = `UTF8:${keyStr}`;
             }
         } else {
             // Implicit brute force: 0-255 (1 byte)
+            keysToTry = new Array(256);
             for (let i = 0; i < 256; i++) {
-                keysToTry.push([i]);
+                keysToTry[i] = [i];
             }
         }
 
@@ -56,10 +53,12 @@ window.Decoder.registerCipher('XOR', {
                 outBytes[i] = inputBytes[i] ^ key[i % keyLen];
             }
 
-            // Convert back to string
+            // Convert back to string in chunks to avoid O(n^2) concatenation
             let outStr = '';
-            for (let i = 0; i < outBytes.length; i++) {
-                outStr += String.fromCharCode(outBytes[i]);
+            const chunkSize = 8192;
+            for (let i = 0; i < outBytes.length; i += chunkSize) {
+                const chunk = outBytes.subarray(i, i + chunkSize);
+                outStr += String.fromCharCode.apply(null, chunk);
             }
 
             let opName = 'XOR';

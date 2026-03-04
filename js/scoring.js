@@ -228,7 +228,40 @@ function computeStructuralBonus(text, sampleLen) {
     return bonus / Math.max(1, sampleLen);
 }
 
+// Allocation-free Shannon entropy using a module-level buffer
+// Assigned directly to window.Decoder to avoid global name collisions with app.js
+const _entropyBuf = new Uint32Array(256);
+
 // Make globally available to the main app script
 window.Decoder.CRIB_MATCH_SCORE = CRIB_MATCH_SCORE;
 window.Decoder.getPrintableRatio = getPrintableRatio;
 window.Decoder.scoreText = scoreText;
+
+window.Decoder.shannonEntropySample = function (text, limit) {
+    if (limit === undefined) limit = 256;
+    const len = Math.min(text.length, limit);
+    if (len === 0) return 0;
+    _entropyBuf.fill(0);
+    for (let i = 0; i < len; i++) _entropyBuf[text.charCodeAt(i) & 0xff]++;
+    let h = 0;
+    for (let i = 0; i < 256; i++) {
+        if (!_entropyBuf[i]) continue;
+        const p = _entropyBuf[i] / len;
+        h -= p * Math.log2(p);
+    }
+    return h;
+};
+
+window.Decoder.printableRatioSample = function (text, limit) {
+    if (limit === undefined) limit = 512;
+    if (!text || text.length === 0) return 0;
+    const sampleLen = Math.min(text.length, limit);
+    let printable = 0;
+    for (let i = 0; i < sampleLen; i++) {
+        const code = text.charCodeAt(i);
+        if ((code >= 32 && code <= 126) || code === 9 || code === 10 || code === 13) {
+            printable++;
+        }
+    }
+    return printable / sampleLen;
+};

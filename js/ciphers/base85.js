@@ -2,6 +2,7 @@ window.Decoder.registerCipher('Base85', {
     testRegex: /^[!-uz~<>\s]+$/,
     entropyRange: [1.0, 6.5],
     decode: (input) => {
+        const POW85 = [1, 85, 7225, 614125, 52200625];
         let res = '';
         let str = input.replace(/\s/g, '').replace(/^<~|~>$/g, '');
         let tuple = 0;
@@ -23,7 +24,7 @@ window.Decoder.registerCipher('Base85', {
         }
         if (count > 0) {
             if (count === 1) return null;
-            tuple = tuple * Math.pow(85, 5 - count);
+            tuple = tuple * POW85[5 - count];
             let shift = 24;
             for (let i = 0; i < count - 1; i++) {
                 res += String.fromCharCode((tuple >>> shift) & 255);

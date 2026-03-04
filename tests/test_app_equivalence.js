@@ -171,33 +171,6 @@ function shannonEntropySample(text, limit = 256) {
     return h;
 }
 
-function printableRatioSample(text, limit = 256) {
-    const len = Math.min(text.length, limit);
-    if (len === 0) return 0;
-    let printable = 0;
-    for (let i = 0; i < len; i++) {
-        const c = text.charCodeAt(i);
-        if (c >= 32 && c <= 126) printable++;
-    }
-    return printable / len;
-}
-
-function shannonEntropySample(text, limit = 256) {
-    const len = Math.min(text.length, limit);
-    if (len === 0) return 0;
-    const counts = new Map();
-    for (let i = 0; i < len; i++) {
-        const ch = text[i];
-        counts.set(ch, (counts.get(ch) || 0) + 1);
-    }
-    let h = 0;
-    for (const n of counts.values()) {
-        const p = n / len;
-        h -= p * Math.log2(p);
-    }
-    return h;
-}
-
 // Ensure the path object is an array of strings for proper iteration
 function materializePathStringArray(r) {
     if (r.path && Array.isArray(r.path)) return r.path;

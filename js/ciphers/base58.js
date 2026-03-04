@@ -1,15 +1,21 @@
+const BASE58_ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+const BASE58_MAP = {};
+for (let i = 0; i < BASE58_ALPHABET.length; i++) {
+    BASE58_MAP[BASE58_ALPHABET[i]] = i;
+}
+
 window.Decoder.registerCipher('Base58', {
     testRegex: /^[1-9A-HJ-NP-Za-km-z\s]+$/,
     entropyRange: [1.0, 5.9],
     decode: (input) => {
-        const ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
-        let clean = input.replace(/\s/g, '');
+        const clean = input.replace(/\s/g, '');
         if (clean.length === 0) return '';
-        let bytes = [];
+        const bytes = [];
         for (let i = 0; i < clean.length; i++) {
             const c = clean[i];
-            if (!(ALPHABET.includes(c))) return null;
-            let val = ALPHABET.indexOf(c);
+            const mapped = BASE58_MAP[c];
+            if (mapped === undefined) return null;
+            let val = mapped;
             for (let j = 0; j < bytes.length; j++) {
                 val += bytes[j] * 58;
                 bytes[j] = val & 0xff;
