@@ -39,13 +39,12 @@ window.Decoder.registerCipher('Zlib Inflate', {
         if (((cmf * 256 + flg) % 31) !== 0) return null;
         
         try {
-            if (typeof window.Zlib === 'undefined' || typeof window.Zlib.Inflate === 'undefined') {
-                console.warn('[Zlib Inflate] Zlib library not loaded');
+            if (typeof window.fflate === 'undefined' || typeof window.fflate.zlib !== 'function') {
+                console.warn('[Zlib Inflate] fflate library not loaded');
                 return null;
             }
             
-            const inflate = new window.Zlib.Inflate(bytes);
-            const decompressed = inflate.decompress();
+            const decompressed = window.fflate.zlib(bytes);
             
             if (!decompressed || decompressed.length === 0) {
                 return null;

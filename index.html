@@ -86,7 +86,7 @@
                         </div>
                         <div class="input-group depth-group">
                             <label for="magic-depth">Magic Depth</label>
-                            <input type="number" id="magic-depth" value="5" min="1" max="10">
+                            <input type="number" id="magic-depth" value="5" min="1" max="20">
                         </div>
                     </div>
                     <div class="crazy-mode-row">
@@ -234,9 +234,7 @@
     <script src="js/performance.js"></script>
 
     <!-- Compression libs - loaded on demand when compression ops are enabled -->
-    <script src="js/vendor/zlibjs/zlib_and_gzip.min.js" defer></script>
-    <script src="js/vendor/zlibjs/gunzip.min.js" defer></script>
-    <script src="js/vendor/zlibjs/rawinflate.min.js" defer></script>
+    <script src="js/vendor/fflate.min.js" defer></script>
 
     <!-- Ciphers -->
     <script src="js/ciphers/compression_utils.js" defer></script>

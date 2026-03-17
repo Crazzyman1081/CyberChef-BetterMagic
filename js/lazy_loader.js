@@ -9,8 +9,7 @@ window.DecoderLazyLoader = (function() {
     const loadingPromises = new Map();
     
     const COMPRESSION_SCRIPTS = [
-        'js/vendor/zlibjs/zlib_and_gzip.min.js',
-        'js/vendor/zlibjs/gunzip.min.js'
+        'js/vendor/fflate.min.js'
     ];
     
     function loadScript(src) {

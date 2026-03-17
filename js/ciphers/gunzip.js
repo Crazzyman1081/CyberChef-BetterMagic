@@ -41,15 +41,14 @@ window.Decoder.registerCipher('Gunzip', {
         }
         
         try {
-            // Check if zlib library is loaded
-            if (typeof window.Zlib === 'undefined' || typeof window.Zlib.Gunzip === 'undefined') {
-                console.warn('[Gunzip] Zlib library not loaded');
+            // Check if fflate library is loaded
+            if (typeof window.fflate === 'undefined' || typeof window.fflate.gunzip !== 'function') {
+                console.warn('[Gunzip] fflate library not loaded');
                 return null;
             }
             
-            // Decompress using zlib.js Gunzip
-            const gunzip = new window.Zlib.Gunzip(bytes);
-            const decompressed = gunzip.decompress();
+            // Decompress using fflate.gunzip (synchronous)
+            const decompressed = window.fflate.gunzip(bytes);
             
             if (!decompressed || decompressed.length === 0) {
                 return null;

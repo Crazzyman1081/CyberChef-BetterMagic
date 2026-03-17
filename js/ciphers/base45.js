@@ -1,7 +1,6 @@
 window.Decoder.registerCipher('Base45', {
-    // Accept any non-empty string; decoder strips non-alphabet
     testRegex: /.+/,
-    entropyRange: [1.0, 5.6],
+    entropyRange: [0, 6.0],
     decode: (input) => {
         const charset = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-./:";
         let clean = input.replace(/[^0-9A-Z $%*+\-./:]/g, '');

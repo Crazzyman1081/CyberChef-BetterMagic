@@ -9,9 +9,8 @@
  */
 
 window.Decoder.registerCipher('Base85', {
-    // Accept any non-empty string; Base85 decoder will strip non-alphabet chars
     testRegex: /.+/,
-    entropyRange: [1.0, 6.5],
+    entropyRange: [0, 8.0],
     
     decode: (input) => {
         if (!input || typeof input !== 'string') return null;
