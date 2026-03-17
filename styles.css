@@ -260,6 +260,22 @@ input[type="number"],
     user-select: none;
 }
 
+.compression-info-icon {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+}
+
+.compression-info-icon .info-icon {
+    color: #9aa7ff;
+    font-size: 0.8rem;
+}
+
+.op-label-text {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
 input[type="number"] {
     font-family: var(--font-mono);
     font-weight: 500;
@@ -730,12 +746,30 @@ input[type="number"]::-webkit-inner-spin-button {
     stroke-width: 2.2;
 }
 
+/* Filtering mode: dim non-matching elements */
+.vis-filtering .vis-node:not(.vis-node-match) {
+    opacity: 0.18;
+}
+
+.vis-filtering .vis-label:not(.vis-label-match) {
+    opacity: 0.18;
+}
+
+.vis-filtering .vis-edge:not(.vis-edge-match) {
+    opacity: 0.18;
+}
+
 .vis-label {
     fill: rgba(230, 237, 243, 0.9);
     font-size: 9px;
     font-family: var(--font-mono);
     pointer-events: none;
     text-rendering: optimizeSpeed;
+}
+
+.vis-label-match {
+    fill: #ffffff;
+    font-weight: bold;
 }
 
 .vis-label-dim {

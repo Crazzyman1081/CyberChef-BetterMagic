@@ -5,12 +5,17 @@ window.Decoder.registerCipher('Hex', {
         // Remove delimiters
         let clean = input.replace(/[\s,:;|]/g, '');
         if (clean.length % 2 !== 0 || clean.length === 0) return null;
-        let res = [];
-        for (let i = 0; i < clean.length; i += 2) {
-            let val = parseInt(clean.slice(i, i + 2), 16);
-            if (isNaN(val) || val < 0 || val > 255) return null;
-            res.push(val);
+        
+        // Pre-allocate result string using array
+        const len = clean.length >>> 1;
+        const chars = new Array(len);
+        
+        for (let i = 0, j = 0; i < clean.length; i += 2, j++) {
+            const byte = (parseInt(clean[i], 16) << 4) | parseInt(clean[i + 1], 16);
+            if (isNaN(byte)) return null;
+            chars[j] = String.fromCharCode(byte);
         }
-        return res.length > 0 ? String.fromCharCode(...res) : null;
+        
+        return chars.join('');
     }
 });

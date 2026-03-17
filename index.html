@@ -6,7 +6,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BetterMagic</title>
     <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; font-src https://fonts.gstatic.com; img-src 'self' data:;">
+        content="default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com;">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="styles.css">
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap"
@@ -206,6 +208,11 @@
         if multiple unique XOR keys (single byte) were applied sequentially
     </div>
 
+    <div id="global-compression-tooltip" class="global-tooltip glowing-blue">
+        <strong>Compression ops (slow):</strong> Only enable if you suspect compressed data and disable unrelated ops first.<br><br>
+        Tip: Use Initial Sequence like "Hex, Gunzip" or "Hex, Zlib Inflate".
+    </div>
+
     <div id="global-crazy-tooltip" class="global-tooltip glowing-blue">
         <strong>Crazy Mode (crib-first exhaustive hunt)</strong><br><br>
         <strong>Crib optional:</strong> If provided, mode can stop early when crib is found.<br><br>
@@ -220,30 +227,60 @@
     <!-- Modules -->
     <script src="js/registry.js"></script>
     <script src="js/scoring.js"></script>
+    <script src="js/debounce.js"></script>
+    <script src="js/lazy_loader.js"></script>
+    <script src="js/wasm_module.js"></script>
+    <script src="js/progressive_renderer.js"></script>
+    <script src="js/performance.js"></script>
+
+    <!-- Compression libs - loaded on demand when compression ops are enabled -->
+    <script src="js/vendor/zlibjs/zlib_and_gzip.min.js" defer></script>
+    <script src="js/vendor/zlibjs/gunzip.min.js" defer></script>
+    <script src="js/vendor/zlibjs/rawinflate.min.js" defer></script>
 
     <!-- Ciphers -->
-    <script src="js/ciphers/base32.js"></script>
-    <script src="js/ciphers/base45.js"></script>
-    <script src="js/ciphers/base58.js"></script>
-    <script src="js/ciphers/base62.js"></script>
-    <script src="js/ciphers/base64.js"></script>
-    <script src="js/ciphers/base85.js"></script>
-    <script src="js/ciphers/base91.js"></script>
-    <script src="js/ciphers/base92.js"></script>
-    <script src="js/ciphers/binary.js"></script>
-    <script src="js/ciphers/decimal.js"></script>
-    <script src="js/ciphers/hex.js"></script>
-    <script src="js/ciphers/octal.js"></script>
-    <script src="js/ciphers/reverse.js"></script>
-    <script src="js/ciphers/rot13.js"></script>
-    <script src="js/ciphers/rot47.js"></script>
-    <script src="js/ciphers/rot8000.js"></script>
-    <script src="js/ciphers/xor.js"></script>
-    <script src="js/crazy.js"></script>
+    <script src="js/ciphers/compression_utils.js" defer></script>
+    <script src="js/ciphers/base32.js" defer></script>
+    <script src="js/ciphers/base45.js" defer></script>
+    <script src="js/ciphers/base58.js" defer></script>
+    <script src="js/ciphers/base62.js" defer></script>
+    <script src="js/ciphers/base64.js" defer></script>
+    <script src="js/ciphers/base85.js" defer></script>
+    <script src="js/ciphers/base91.js" defer></script>
+    <script src="js/ciphers/base92.js" defer></script>
+    <script src="js/ciphers/binary.js" defer></script>
+    <script src="js/ciphers/decimal.js" defer></script>
+    <script src="js/ciphers/hex.js" defer></script>
+    <script src="js/ciphers/octal.js" defer></script>
+    <script src="js/ciphers/reverse.js" defer></script>
+    <script src="js/ciphers/rot13.js" defer></script>
+    <script src="js/ciphers/rot47.js" defer></script>
+    <script src="js/ciphers/rot8000.js" defer></script>
+    <script src="js/ciphers/gunzip.js" defer></script>
+    <script src="js/ciphers/zlib_inflate.js" defer></script>
+    <script src="js/ciphers/morse.js" defer></script>
+    <script src="js/ciphers/braille.js" defer></script>
+    <script src="js/ciphers/xor.js" defer></script>
+    <script src="js/crazy.js" defer></script>
 
     <!-- Main App -->
-    <script src="app.js"></script>
-    <script src="js/ui.js"></script>
+    <script src="app.js" defer></script>
+    <script src="js/ui.js" defer></script>
+    
+    <!-- Service Worker Registration -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./service-worker.js')
+                    .then(registration => {
+                        console.log('[App] Service Worker registered:', registration.scope);
+                    })
+                    .catch(error => {
+                        console.log('[App] Service Worker registration failed:', error);
+                    });
+            });
+        }
+    </script>
 </body>
 
 </html>

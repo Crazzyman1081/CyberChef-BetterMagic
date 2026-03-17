@@ -57,7 +57,39 @@ function scoreText(text, crib, parentLen = 0) {
     let printable = 0;
     let score = 0;
 
-    for (let i = 0; i < sampleLen; i++) {
+    // Unroll loop for better performance on hot path
+    const limit = sampleLen - (sampleLen % 4);
+    let i = 0;
+    
+    for (; i < limit; i += 4) {
+        // Process 4 characters at once
+        const c0 = text.charCodeAt(i);
+        const c1 = text.charCodeAt(i + 1);
+        const c2 = text.charCodeAt(i + 2);
+        const c3 = text.charCodeAt(i + 3);
+        
+        // Check printable
+        if ((c0 >= 32 && c0 <= 126) || c0 === 9 || c0 === 10 || c0 === 13) printable++;
+        if ((c1 >= 32 && c1 <= 126) || c1 === 9 || c1 === 10 || c1 === 13) printable++;
+        if ((c2 >= 32 && c2 <= 126) || c2 === 9 || c2 === 10 || c2 === 13) printable++;
+        if ((c3 >= 32 && c3 <= 126) || c3 === 9 || c3 === 10 || c3 === 13) printable++;
+        
+        // Score characters
+        if (c0 < 128) score += ASCII_SCORE_TABLE[c0] || LEET_SCORE_TABLE[c0] || ((c0 >= 97 && c0 <= 122) ? -5 : -10);
+        else score -= 10;
+        
+        if (c1 < 128) score += ASCII_SCORE_TABLE[c1] || LEET_SCORE_TABLE[c1] || ((c1 >= 97 && c1 <= 122) ? -5 : -10);
+        else score -= 10;
+        
+        if (c2 < 128) score += ASCII_SCORE_TABLE[c2] || LEET_SCORE_TABLE[c2] || ((c2 >= 97 && c2 <= 122) ? -5 : -10);
+        else score -= 10;
+        
+        if (c3 < 128) score += ASCII_SCORE_TABLE[c3] || LEET_SCORE_TABLE[c3] || ((c3 >= 97 && c3 <= 122) ? -5 : -10);
+        else score -= 10;
+    }
+    
+    // Handle remaining characters
+    for (; i < sampleLen; i++) {
         const code = text.charCodeAt(i);
         if ((code >= 32 && code <= 126) || code === 9 || code === 10 || code === 13) {
             printable++;

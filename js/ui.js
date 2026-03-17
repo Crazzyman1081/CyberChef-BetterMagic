@@ -21,6 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const tabOutput = document.getElementById('tab-output');
     const tabVisualizer = document.getElementById('tab-visualizer');
     const statusIndicator = document.getElementById('status-indicator');
+    if (statusIndicator) statusIndicator.setAttribute('aria-live', 'polite');
     const progressWrap = document.getElementById('progress-wrap');
     const progressBar = document.getElementById('progress-bar');
     const magicDepthInput = document.getElementById('magic-depth');
@@ -48,6 +49,10 @@ document.addEventListener('DOMContentLoaded', () => {
         defaultPanSpeed: 2.35,
         rafPending: false
     };
+
+    // Color cache for performance
+    const colorCache = new Map();
+
     const visRuntime = {
         nodes: [],
         nodeElById: new Map(),
@@ -332,16 +337,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function colorForOp(opName) {
         if (!opName || opName === 'Input') return '#8b949e';
+        if (colorCache.has(opName)) return colorCache.get(opName);
         let hash = 0;
         for (let i = 0; i < opName.length; i++) {
             hash = ((hash << 5) - hash + opName.charCodeAt(i)) | 0;
         }
         const hue = Math.abs(hash) % 360;
-        return `hsl(${hue}, 68%, 56%)`;
+        const color = `hsl(${hue}, 68%, 56%)`;
+        colorCache.set(opName, color);
+        return color;
     }
 
     function clearVisualizer(message = 'Run Smart Magic Search to generate a graph.') {
-        if (visualizerGraph) visualizerGraph.innerHTML = '';
+        if (visualizerGraph) {
+            visualizerGraph.innerHTML = '';
+            visualizerGraph.classList.remove('vis-filtering');
+        }
         if (visualizerSvg) {
             visualizerSvg.setAttribute('viewBox', '0 0 1000 600');
             visualizerSvg.setAttribute('width', '1000');
@@ -506,7 +517,7 @@ document.addEventListener('DOMContentLoaded', () => {
             for (let i = 0; i < layer.length; i++) {
                 const node = layer[i];
                 const pos = posById.get(node.id);
-                const radius = node.depth === 0 ? 8 : Math.min(9, 4 + Math.log2(1 + node.count));
+                const radius = node.depth === 0 ? 12 : Math.max(8, Math.min(14, 8 + Math.log2(1 + node.count)));
 
                 const circle = document.createElementNS(svgNS, 'circle');
                 circle.setAttribute('cx', pos.x);
