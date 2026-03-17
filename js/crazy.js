@@ -122,6 +122,21 @@
             throw new Error('createRunCrazyMagic missing required dependencies.');
         }
 
+        // Helper: check if text is mostly printable ASCII (strong positive signal to keep exploring)
+        function isPrintableASCII(text) {
+            if (!text || text.length === 0) return false;
+            let printable = 0;
+            const sampleLen = Math.min(text.length, 100);
+            for (let i = 0; i < sampleLen; i++) {
+                const c = text.charCodeAt(i);
+                // Tab, LF, CR, and printable ASCII (32-126)
+                if ((c >= 32 && c <= 126) || c === 9 || c === 10 || c === 13) {
+                    printable++;
+                }
+            }
+            return printable / sampleLen > 0.8;
+        }
+
         return async function runCrazyMagic(input, options = {}) {
             const crib = (options.crib || '').trim();
             const hasCrib = crib.length > 0;
@@ -262,8 +277,8 @@
                             if (!passesOutputValidation(nextText)) continue;
 
                             const score = scoreText(nextText, crib, parentLen);
-                            // Threshold: only explore branches with score > -10
-                            if (score <= -10) continue;
+                            // Prune low-score branches unless they contain printable ASCII
+                            if (score <= -10 && !isPrintableASCII(nextText)) continue;
 
                             const fp = textFingerprint(nextText);
                             const normOps = current.normOps.concat(nextOp);
@@ -286,8 +301,8 @@
                         if (!passesOutputValidation(dec)) continue;
 
                         const score = scoreText(dec, crib, parentLen);
-                        // Threshold: only explore branches with score > -10
-                        if (score <= -10) continue;
+                        // Prune low-score branches unless they contain printable ASCII
+                        if (score <= -10 && !isPrintableASCII(dec)) continue;
 
                         const fp = textFingerprint(dec);
                         const normOps = current.normOps.concat(opName);
