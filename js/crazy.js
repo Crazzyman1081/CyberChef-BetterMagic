@@ -262,6 +262,9 @@
                             if (!passesOutputValidation(nextText)) continue;
 
                             const score = scoreText(nextText, crib, parentLen);
+                            // Threshold: only explore branches with score > -10
+                            if (score <= -10) continue;
+
                             const fp = textFingerprint(nextText);
                             const normOps = current.normOps.concat(nextOp);
                             if (!addSeen(fp, score)) continue;
@@ -283,6 +286,9 @@
                         if (!passesOutputValidation(dec)) continue;
 
                         const score = scoreText(dec, crib, parentLen);
+                        // Threshold: only explore branches with score > -10
+                        if (score <= -10) continue;
+
                         const fp = textFingerprint(dec);
                         const normOps = current.normOps.concat(opName);
                         if (!addSeen(fp, score)) continue;
