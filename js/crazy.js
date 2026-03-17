@@ -259,7 +259,7 @@
                             const nextText = multiRes[m].value;
                             const nextOp = multiRes[m].op || opName;
                             if (!nextText || nextText === parentText) continue;
-                            if (!passesOutputValidation(nextText)) continue;
+                            
 
                             const score = scoreText(nextText, crib, parentLen);
                             
@@ -281,7 +281,7 @@
                         let dec = null;
                         try { dec = op.decode(parentText, options) || null; } catch (e) { dec = null; }
                         if (!dec || dec === parentText) continue;
-                        if (!passesOutputValidation(dec)) continue;
+                        
 
                         const score = scoreText(dec, crib, parentLen);
                         
