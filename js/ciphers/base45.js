@@ -1,5 +1,6 @@
 window.Decoder.registerCipher('Base45', {
-    testRegex: /^[0-9A-Z $%*+\-./:]+$/,
+    // Accept any non-empty string; decoder strips non-alphabet
+    testRegex: /.+/,
     entropyRange: [1.0, 5.6],
     decode: (input) => {
         const charset = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-./:";
