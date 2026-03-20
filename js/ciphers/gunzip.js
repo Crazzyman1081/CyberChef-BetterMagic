@@ -7,7 +7,6 @@ window.Decoder.registerCipher('Gunzip', {
     // Gzip magic bytes: 0x1f 0x8b
     testRegex: /[\x00-\xff]{2,}/,
     entropyRange: [0, 8.0],
-    
     decode: (input) => {
         // Quick pre-check: input must be binary/hex-looking
         if (!input || typeof input !== 'string') return null;
@@ -27,7 +26,7 @@ window.Decoder.registerCipher('Gunzip', {
                 }
             } else {
                 // Direct binary string
-                bytes = window.DecoderCompressionUtils.stringToBytes(clean);
+                bytes = window.DecoderCompressionUtils.stringToBytes(input);
             }
             
             if (bytes.length < 10) return null; // Too short for gzip header
@@ -42,13 +41,16 @@ window.Decoder.registerCipher('Gunzip', {
         
         try {
             // Check if fflate library is loaded
-            if (typeof window.fflate === 'undefined' || typeof window.fflate.gunzip !== 'function') {
+            const gunzip = window.fflate && (
+                window.fflate.gunzipSync ||
+                window.fflate.gunzip
+            );
+            if (typeof gunzip !== 'function') {
                 console.warn('[Gunzip] fflate library not loaded');
                 return null;
             }
             
-            // Decompress using fflate.gunzip (synchronous)
-            const decompressed = window.fflate.gunzip(bytes);
+            const decompressed = gunzip(bytes);
             
             if (!decompressed || decompressed.length === 0) {
                 return null;

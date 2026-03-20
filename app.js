@@ -98,6 +98,8 @@ function evictOldest(map) {
 const SEARCH_CONFIG = {
     OUTPUT_MIN_PRINTABLE: 0.7,
     OUTPUT_MAX_ENTROPY: 7.5,
+    BINARY_EXTREME_MAX_PRINTABLE: 0.3,
+    BINARY_EXTREME_MIN_ENTROPY: 4.5,
     MAX_BRANCH_TEXT_LEN: 500000,
     TEST_PREFIX_LEN: 5000,
     COMPRESSION_RATIO_CAP: 5,
@@ -115,12 +117,34 @@ const shannonEntropySample = window.Decoder.shannonEntropySample;
 function passesOutputValidation(decodedText) {
     if (!decodedText || decodedText.length === 0) return false;
     const pr = printableRatioSample(decodedText, SEARCH_CONFIG.SCORE_SAMPLE_LEN);
-    if (pr < SEARCH_CONFIG.OUTPUT_MIN_PRINTABLE) return false;
+    if (pr < SEARCH_CONFIG.OUTPUT_MIN_PRINTABLE) {
+        return looksLikeCompressionCandidate(decodedText, pr);
+    }
     if (decodedText.length > 16) {
         const entropy = shannonEntropySample(decodedText, SEARCH_CONFIG.SCORE_SAMPLE_LEN);
         if (entropy > SEARCH_CONFIG.OUTPUT_MAX_ENTROPY) return false;
     }
     return true;
+}
+
+function looksLikeCompressionCandidate(decodedText, printableRatio = null) {
+    const pr = printableRatio ?? printableRatioSample(decodedText, SEARCH_CONFIG.SCORE_SAMPLE_LEN);
+    if (pr > SEARCH_CONFIG.BINARY_EXTREME_MAX_PRINTABLE) return false;
+
+    const bytes = new Uint8Array(decodedText.length);
+    for (let i = 0; i < decodedText.length; i++) {
+        bytes[i] = decodedText.charCodeAt(i) & 0xff;
+    }
+
+    const compressionUtils = window.DecoderCompressionUtils;
+    if (compressionUtils) {
+        if (compressionUtils.isGzipHeader(bytes) || compressionUtils.isZlibHeader(bytes)) {
+            return true;
+        }
+    }
+
+    if (decodedText.length < 16) return false;
+    return shannonEntropySample(decodedText, SEARCH_CONFIG.SCORE_SAMPLE_LEN) >= SEARCH_CONFIG.BINARY_EXTREME_MIN_ENTROPY;
 }
 
 function passesBranchPrefilter(opName, textPrefix) {
@@ -321,6 +345,7 @@ async function runMagic(input, options) {
         pathNode: startPathNode,
         normOps: startingPath.slice(),
         pathLen: startingPath.length,
+        searchDepth: 0,
         lastOp: startingPath.length > 0 ? startingPath[startingPath.length - 1] : '',
         text: currentText,
         score: scoreText(currentText, crib, input.length)
@@ -355,7 +380,7 @@ async function runMagic(input, options) {
         }
     }
 
-    const remainingDepth = Math.max(0, maxDepth - startingPath.length);
+    const remainingDepth = Math.max(0, maxDepth);
     let earlyTerminateTriggered = false;
     let expansionsRemaining = 0;
     let stopSearch = false;
@@ -445,6 +470,7 @@ async function runMagic(input, options) {
                                     pathNode: createPathNode(item.pathNode, m.op),
                                     normOps: normOps,
                                     pathLen: item.pathLen + 1,
+                                    searchDepth: item.searchDepth + 1,
                                     lastOp: m.op,
                                     text: m.value,
                                     score: score
@@ -470,6 +496,7 @@ async function runMagic(input, options) {
                                 pathNode: createPathNode(item.pathNode, opName),
                                 normOps: normOps,
                                 pathLen: item.pathLen + 1,
+                                searchDepth: item.searchDepth + 1,
                                 lastOp: opName,
                                 text: dec,
                                 score: score

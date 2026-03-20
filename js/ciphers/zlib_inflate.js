@@ -6,7 +6,6 @@
 window.Decoder.registerCipher('Zlib Inflate', {
     testRegex: /[\x00-\xff]{4,}/,
     entropyRange: [0, 8.0],
-    
     decode: (input) => {
         if (!input || typeof input !== 'string') return null;
         
@@ -21,7 +20,7 @@ window.Decoder.registerCipher('Zlib Inflate', {
                     bytes[i] = parseInt(clean.substr(i * 2, 2), 16);
                 }
             } else {
-                bytes = window.DecoderCompressionUtils.stringToBytes(clean);
+                bytes = window.DecoderCompressionUtils.stringToBytes(input);
             }
             
             if (bytes.length < 2) return null;
@@ -39,12 +38,7 @@ window.Decoder.registerCipher('Zlib Inflate', {
         if (((cmf * 256 + flg) % 31) !== 0) return null;
         
         try {
-            if (typeof window.fflate === 'undefined' || typeof window.fflate.zlib !== 'function') {
-                console.warn('[Zlib Inflate] fflate library not loaded');
-                return null;
-            }
-            
-            const decompressed = window.fflate.zlib(bytes);
+            const decompressed = window.DecoderCompressionUtils.inflateZlib(bytes);
             
             if (!decompressed || decompressed.length === 0) {
                 return null;

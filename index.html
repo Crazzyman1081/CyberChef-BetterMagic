@@ -80,13 +80,43 @@
 
                 <div class="advanced-options">
                     <div class="controls-row magic-options-row">
-                        <div class="input-group">
-                            <label for="initial-sequence">Initial Sequence</label>
-                            <input type="text" id="initial-sequence" placeholder="e.g. Base64, Base32">
+                        <div class="input-group sequence-input-group">
+                            <label for="initial-sequence-trigger">Initial Sequence</label>
+                            <div class="sequence-popover-anchor">
+                                <button id="initial-sequence-trigger" class="sequence-trigger" type="button"
+                                    aria-expanded="false" aria-controls="sequence-builder">
+                                    <span class="sequence-trigger-summary">Build Sequence</span>
+                                    <span id="initial-sequence-count" class="sequence-count-badge">0 steps</span>
+                                    <span class="sequence-trigger-caret">▲</span>
+                                </button>
+                                <div id="sequence-builder" class="sequence-builder sequence-builder-popover hidden"
+                                    aria-label="Initial sequence builder">
+                                    <div class="sequence-builder-section">
+                                        <div class="sequence-builder-header">
+                                            <div class="sequence-builder-title-wrap">
+                                                <span class="sequence-builder-title">Selected Sequence</span>
+                                                <span id="initial-sequence-length" class="sequence-count-badge">0 steps</span>
+                                            </div>
+                                            <button id="initial-sequence-clear" class="sequence-clear-btn"
+                                                type="button">Clear</button>
+                                        </div>
+                                        <div id="initial-sequence-selected" class="sequence-dropzone" aria-live="polite">
+                                            <span class="sequence-placeholder">No initial sequence selected.</span>
+                                        </div>
+                                    </div>
+                                    <div class="sequence-builder-section">
+                                        <div class="sequence-builder-header">
+                                            <span class="sequence-builder-title">Enabled Ciphers</span>
+                                            <span class="sequence-builder-hint">Click a block to add it.</span>
+                                        </div>
+                                        <div id="initial-sequence-available" class="sequence-chip-list"></div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                         <div class="input-group depth-group">
                             <label for="magic-depth">Magic Depth</label>
-                            <input type="number" id="magic-depth" value="5" min="1" max="20">
+                             <input type="number" id="magic-depth" value="5" min="1" max="1000">
                         </div>
                     </div>
                     <div class="crazy-mode-row">
@@ -144,32 +174,42 @@
                     </div>
                 </div>
                 <div id="visualizer-panel" class="visualizer-panel hidden" aria-live="polite">
+                    <div class="visualizer-shell">
                     <div class="visualizer-toolbar">
                         <div class="visualizer-toolbar-top">
                             <div id="visualizer-stats" class="visualizer-stats">Run Smart Magic Search to generate a
                                 graph.</div>
-                            <button id="visualizer-fullscreen-btn" class="visualizer-btn" type="button"
-                                aria-label="Toggle full screen visualizer">Full Screen</button>
+                            <div class="visualizer-toolbar-actions">
+                                <button id="visualizer-close-btn" class="visualizer-close-btn" type="button"
+                                    aria-label="Close visualizer">&times;</button>
+                            </div>
                         </div>
                         <div class="visualizer-search">
-                            <input id="vis-search-chain" class="visualizer-search-input" type="text"
-                                placeholder="Chain prefix (e.g. Base64 -> Hex)">
                             <input id="vis-search-crib" class="visualizer-search-input" type="text"
                                 placeholder="Crib in decoded text">
                             <button id="vis-search-btn" class="visualizer-btn" type="button">Search</button>
                             <button id="vis-search-next-btn" class="visualizer-btn" type="button">Next</button>
                             <button id="vis-search-clear-btn" class="visualizer-btn" type="button">Clear</button>
                         </div>
-                        <div id="visualizer-ops" class="visualizer-ops"></div>
                     </div>
-                    <div id="visualizer-viewport" class="visualizer-viewport">
-                        <svg id="visualizer-svg" class="visualizer-svg" viewBox="0 0 1000 600"
-                            preserveAspectRatio="xMidYMid meet">
-                            <g id="visualizer-graph"></g>
-                        </svg>
+                    <div class="visualizer-body">
+                        <div class="visualizer-branch-panel">
+                            <div id="visualizer-branch-list" class="visualizer-branch-list">
+                                <div class="visualizer-empty">Run Smart Magic Search to inspect ranked branches.</div>
+                            </div>
+                        </div>
+                        <div class="visualizer-detail-panel">
+                            <div id="visualizer-selection-meta" class="visualizer-selection-meta">Select a branch to inspect its path and nearby alternatives.</div>
+                            <div id="visualizer-selection-path" class="visualizer-selection-path"></div>
+                            <div id="visualizer-viewport" class="visualizer-viewport">
+                                <svg id="visualizer-svg" class="visualizer-svg" viewBox="0 0 1000 600"
+                                    preserveAspectRatio="xMidYMid meet">
+                                    <g id="visualizer-graph"></g>
+                                </svg>
+                            </div>
+                        </div>
                     </div>
-                    <div id="visualizer-node-info" class="visualizer-node-info">Hover or click a node to inspect a
-                        branch.</div>
+                    </div>
                 </div>
             </section>
         </main>
@@ -179,7 +219,10 @@
     <template id="result-card-template">
         <div class="result-card">
             <div class="result-header">
-                <div class="path-badges"></div>
+                <div class="result-path-row">
+                    <button class="use-sequence-btn" type="button" aria-label="Use this path as initial sequence">↤</button>
+                    <div class="path-badges"></div>
+                </div>
                 <div class="metrics">
                     <span class="score-badge">Score: <span class="score-value">0</span></span>
                 </div>
@@ -233,9 +276,6 @@
     <script src="js/progressive_renderer.js"></script>
     <script src="js/performance.js"></script>
 
-    <!-- Compression libs - loaded on demand when compression ops are enabled -->
-    <script src="js/vendor/fflate.min.js" defer></script>
-
     <!-- Ciphers -->
     <script src="js/ciphers/compression_utils.js" defer></script>
     <script src="js/ciphers/base32.js" defer></script>
@@ -264,21 +304,7 @@
     <!-- Main App -->
     <script src="app.js" defer></script>
     <script src="js/ui.js" defer></script>
-    
-    <!-- Service Worker Registration -->
-    <script>
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('./service-worker.js')
-                    .then(registration => {
-                        console.log('[App] Service Worker registered:', registration.scope);
-                    })
-                    .catch(error => {
-                        console.log('[App] Service Worker registration failed:', error);
-                    });
-            });
-        }
-    </script>
+    <script src="js/sw-register.js" defer></script>
 </body>
 
 </html>

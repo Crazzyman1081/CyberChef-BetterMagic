@@ -7,13 +7,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const outputContainer = document.getElementById('output-container');
     const visualizerPanel = document.getElementById('visualizer-panel');
     const visualizerStats = document.getElementById('visualizer-stats');
-    const visualizerOps = document.getElementById('visualizer-ops');
+    const visualizerBranchList = document.getElementById('visualizer-branch-list');
+    const visualizerSelectionMeta = document.getElementById('visualizer-selection-meta');
+    const visualizerSelectionPath = document.getElementById('visualizer-selection-path');
     const visualizerViewport = document.getElementById('visualizer-viewport');
     const visualizerSvg = document.getElementById('visualizer-svg');
     const visualizerGraph = document.getElementById('visualizer-graph');
-    const visualizerNodeInfo = document.getElementById('visualizer-node-info');
-    const visualizerFullscreenBtn = document.getElementById('visualizer-fullscreen-btn');
-    const visSearchChainInput = document.getElementById('vis-search-chain');
+    const visualizerCloseBtn = document.getElementById('visualizer-close-btn');
     const visSearchCribInput = document.getElementById('vis-search-crib');
     const visSearchBtn = document.getElementById('vis-search-btn');
     const visSearchNextBtn = document.getElementById('vis-search-next-btn');
@@ -25,13 +25,20 @@ document.addEventListener('DOMContentLoaded', () => {
     const progressWrap = document.getElementById('progress-wrap');
     const progressBar = document.getElementById('progress-bar');
     const magicDepthInput = document.getElementById('magic-depth');
-    const initialSequenceInput = document.getElementById('initial-sequence');
+    const initialSequenceTrigger = document.getElementById('initial-sequence-trigger');
+    const initialSequenceCount = document.getElementById('initial-sequence-count');
+    const initialSequenceLength = document.getElementById('initial-sequence-length');
+    const sequenceBuilder = document.getElementById('sequence-builder');
+    const initialSequenceSelected = document.getElementById('initial-sequence-selected');
+    const initialSequenceAvailable = document.getElementById('initial-sequence-available');
+    const initialSequenceClearBtn = document.getElementById('initial-sequence-clear');
     const crazyModeToggle = document.getElementById('crazy-mode-toggle');
     const operationsToggles = document.getElementById('operations-toggles');
     const resultTemplate = document.getElementById('result-card-template');
 
     const CRIB_MATCH_SCORE = window.Decoder.CRIB_MATCH_SCORE; // Fix #1
     let activeResultsTab = 'output';
+    let visualizerOverlayOpen = false;
     let runVisualizerSearch = null;
     const visState = {
         scale: 1,
@@ -52,16 +59,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Color cache for performance
     const colorCache = new Map();
+    let initialSequenceOps = [];
+    let initialSequencePopoverOpen = false;
 
     const visRuntime = {
-        nodes: [],
-        nodeElById: new Map(),
-        labelElById: new Map(),
-        edgeEls: [],
+        branches: [],
+        filteredBranches: [],
+        branchElById: new Map(),
+        treeNodes: new Map(),
+        childrenById: new Map(),
         parentById: new Map(),
-        childCountById: new Map(),
         matches: [],
-        matchIndex: -1
+        matchIndex: -1,
+        selectedBranchId: ''
     };
 
     function applyVisualizerTransform() {
@@ -89,7 +99,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function setupVisualizerInteractions() {
-        if (!visualizerViewport || !visualizerSvg || visState.initialized) return;
+        if (visState.initialized || !visualizerViewport || !visualizerSvg) return;
         visState.initialized = true;
 
         visualizerViewport.addEventListener('wheel', (e) => {
@@ -140,188 +150,438 @@ document.addEventListener('DOMContentLoaded', () => {
         visualizerViewport.addEventListener('dblclick', () => {
             resetVisualizerTransform();
         });
-
-        function updateFullscreenButton() {
-            if (!visualizerFullscreenBtn || !visualizerPanel) return;
-            const isFs = document.fullscreenElement === visualizerPanel;
-            visualizerFullscreenBtn.textContent = isFs ? 'Exit Full Screen' : 'Full Screen';
-        }
-
-        if (visualizerFullscreenBtn && visualizerPanel) {
-            visualizerFullscreenBtn.addEventListener('click', async () => {
-                try {
-                    if (document.fullscreenElement === visualizerPanel) {
-                        await document.exitFullscreen();
-                    } else {
-                        await visualizerPanel.requestFullscreen();
-                    }
-                } catch (e) { }
-                updateFullscreenButton();
-            });
-            document.addEventListener('fullscreenchange', updateFullscreenButton);
-            updateFullscreenButton();
-        }
-
-        function parseChainPrefix(raw) {
-            if (!raw) return [];
-            return raw
-                .split(/(?:->|>|,|\s+)/)
-                .map(s => s.trim())
-                .filter(Boolean)
-                .map(s => s.toLowerCase());
-        }
-
-        function pathStartsWith(pathOps, prefixOps) {
-            if (prefixOps.length === 0) return true;
-            if (!pathOps || pathOps.length < prefixOps.length) return false;
-            for (let i = 0; i < prefixOps.length; i++) {
-                if ((pathOps[i] || '').toLowerCase() !== prefixOps[i]) return false;
-            }
-            return true;
-        }
-
-        function focusMatchedNode(node) {
-            if (!node || !visualizerSvg) return;
-            const vb = (visualizerSvg.getAttribute('viewBox') || '0 0 1000 600').split(/\s+/).map(Number);
-            const vbW = vb[2] || 1000;
-            const vbH = vb[3] || 600;
-            if (visState.scale < 1.4) visState.scale = 1.4;
-            visState.tx = (vbW / 2) - (node.x * visState.scale);
-            visState.ty = (vbH / 2) - (node.y * visState.scale);
-            scheduleVisualizerTransform();
-        }
-
-        function applyVisualizerSearch(focusFirst = true) {
-            const chainPrefixOps = parseChainPrefix(visSearchChainInput ? visSearchChainInput.value : '');
-            const crib = ((visSearchCribInput ? visSearchCribInput.value : '') || '').trim().toLowerCase();
-            const hasFilter = chainPrefixOps.length > 0 || !!crib;
-
-            const terminalMatches = [];
-            const matchedLineageIds = new Set();
-
-            for (let i = 0; i < visRuntime.nodes.length; i++) {
-                const node = visRuntime.nodes[i];
-                const chainOk = pathStartsWith(node.pathOps || [], chainPrefixOps);
-                const cribOk = !crib || ((node.sample || '').toLowerCase().includes(crib));
-                if (!chainOk || !cribOk) continue;
-
-                const isLeaf = (visRuntime.childCountById.get(node.id) || 0) === 0;
-                // If crib is specified, node content is the terminal signal.
-                // Otherwise prefer terminal leaf nodes so we highlight solved branches, not attempted side paths.
-                if (crib || isLeaf) {
-                    terminalMatches.push(node);
-                }
-            }
-
-            // Fallback to direct matches if leaf filtering removes everything.
-            if (hasFilter && terminalMatches.length === 0) {
-                for (let i = 0; i < visRuntime.nodes.length; i++) {
-                    const node = visRuntime.nodes[i];
-                    const chainOk = pathStartsWith(node.pathOps || [], chainPrefixOps);
-                    const cribOk = !crib || ((node.sample || '').toLowerCase().includes(crib));
-                    if (chainOk && cribOk) terminalMatches.push(node);
-                }
-            }
-
-            for (let i = 0; i < terminalMatches.length; i++) {
-                let currId = terminalMatches[i].id;
-                while (currId) {
-                    if (matchedLineageIds.has(currId)) break;
-                    matchedLineageIds.add(currId);
-                    currId = visRuntime.parentById.get(currId) || '';
-                }
-            }
-
-            for (const [id, el] of visRuntime.nodeElById.entries()) {
-                const isMatch = matchedLineageIds.has(id);
-                el.classList.toggle('vis-node-match', hasFilter && isMatch);
-                el.classList.toggle('vis-node-dim', hasFilter && !isMatch);
-            }
-            for (const [id, el] of visRuntime.labelElById.entries()) {
-                const isMatch = matchedLineageIds.has(id);
-                el.classList.toggle('vis-label-dim', hasFilter && !isMatch);
-            }
-            for (let i = 0; i < visRuntime.edgeEls.length; i++) {
-                const edge = visRuntime.edgeEls[i];
-                const onLineage = matchedLineageIds.has(edge.from) && matchedLineageIds.has(edge.to);
-                edge.el.classList.toggle('vis-edge-match', hasFilter && onLineage);
-                edge.el.classList.toggle('vis-edge-dim', hasFilter && !onLineage);
-            }
-
-            visRuntime.matches = terminalMatches;
-            visRuntime.matchIndex = terminalMatches.length > 0 ? 0 : -1;
-
-            if (visualizerStats) {
-                const base = visualizerStats.textContent.split(' | Search:')[0];
-                if (hasFilter) {
-                    visualizerStats.textContent = `${base} | Search: ${terminalMatches.length} branch match(es)`;
-                } else {
-                    visualizerStats.textContent = base;
-                }
-            }
-
-            if (terminalMatches.length > 0 && focusFirst) {
-                focusMatchedNode(terminalMatches[0]);
-                if (visualizerNodeInfo) {
-                    const s = (terminalMatches[0].sample || '').replace(/\s+/g, ' ').slice(0, 180);
-                    visualizerNodeInfo.textContent = `${terminalMatches[0].pathText} | visits: ${terminalMatches[0].count} | best score: ${(terminalMatches[0].score || 0).toFixed(2)}${s ? ` | sample: ${s}` : ''}`;
-                }
-            } else if (hasFilter && visualizerNodeInfo) {
-                visualizerNodeInfo.textContent = terminalMatches.length > 0 ? 'Search matches found. Use Next to jump between them.' : 'No matching branches found for the current filter.';
-            }
-        }
-
-        function jumpToNextSearchMatch() {
-            if (!visRuntime.matches || visRuntime.matches.length === 0) return;
-            visRuntime.matchIndex = (visRuntime.matchIndex + 1) % visRuntime.matches.length;
-            const node = visRuntime.matches[visRuntime.matchIndex];
-            focusMatchedNode(node);
-            if (visualizerNodeInfo) {
-                const s = (node.sample || '').replace(/\s+/g, ' ').slice(0, 180);
-                visualizerNodeInfo.textContent = `${node.pathText} | visits: ${node.count} | best score: ${(node.score || 0).toFixed(2)}${s ? ` | sample: ${s}` : ''}`;
-            }
-        }
-
-        if (visSearchBtn) visSearchBtn.addEventListener('click', () => applyVisualizerSearch(true));
-        if (visSearchNextBtn) visSearchNextBtn.addEventListener('click', jumpToNextSearchMatch);
-        if (visSearchClearBtn) {
-            visSearchClearBtn.addEventListener('click', () => {
-                if (visSearchChainInput) visSearchChainInput.value = '';
-                if (visSearchCribInput) visSearchCribInput.value = '';
-                applyVisualizerSearch(false);
-            });
-        }
-        if (visSearchChainInput) {
-            visSearchChainInput.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') applyVisualizerSearch(true);
-            });
-        }
-        if (visSearchCribInput) {
-            visSearchCribInput.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') applyVisualizerSearch(true);
-            });
-        }
-
-        runVisualizerSearch = applyVisualizerSearch;
     }
+
+    function escapeHtml(text) {
+        return String(text || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+    }
+
+    function buildHighlightedSnippet(text, rawQuery, maxChars = 280) {
+        const fragment = document.createDocumentFragment();
+        const source = String(text || '').replace(/\s+/g, ' ').trim();
+        const query = String(rawQuery || '').trim();
+        if (!source) {
+            fragment.appendChild(document.createTextNode('[No output preview]'));
+            return fragment;
+        }
+
+        if (!query) {
+            const clipped = source.length > maxChars ? `${source.slice(0, maxChars - 1)}…` : source;
+            fragment.appendChild(document.createTextNode(clipped));
+            return fragment;
+        }
+
+        const lowerSource = source.toLowerCase();
+        const lowerQuery = query.toLowerCase();
+        const matchIndex = lowerSource.indexOf(lowerQuery);
+        if (matchIndex === -1) {
+            const clipped = source.length > maxChars ? `${source.slice(0, maxChars - 1)}…` : source;
+            fragment.appendChild(document.createTextNode(clipped));
+            return fragment;
+        }
+
+        const contextBefore = Math.max(0, Math.floor((maxChars - query.length) * 0.45));
+        const start = Math.max(0, matchIndex - contextBefore);
+        const end = Math.min(source.length, start + maxChars);
+        const prefixEllipsis = start > 0 ? '…' : '';
+        const suffixEllipsis = end < source.length ? '…' : '';
+        const visible = source.slice(start, end);
+        const localMatchIndex = matchIndex - start;
+
+        if (prefixEllipsis) fragment.appendChild(document.createTextNode(prefixEllipsis));
+        fragment.appendChild(document.createTextNode(visible.slice(0, localMatchIndex)));
+        const mark = document.createElement('mark');
+        mark.className = 'visualizer-crib-match';
+        mark.textContent = visible.slice(localMatchIndex, localMatchIndex + query.length);
+        fragment.appendChild(mark);
+        fragment.appendChild(document.createTextNode(visible.slice(localMatchIndex + query.length)));
+        if (suffixEllipsis) fragment.appendChild(document.createTextNode(suffixEllipsis));
+        return fragment;
+    }
+
+    function renderVisualizerSelectionPath(pathOps) {
+        if (!visualizerSelectionPath) return;
+        visualizerSelectionPath.innerHTML = '';
+        if (!Array.isArray(pathOps) || pathOps.length === 0) {
+            const empty = document.createElement('span');
+            empty.className = 'visualizer-empty';
+            empty.textContent = 'No path selected.';
+            visualizerSelectionPath.appendChild(empty);
+            return;
+        }
+        for (let i = 0; i < pathOps.length; i++) {
+            const chip = document.createElement('span');
+            chip.className = 'visualizer-path-chip';
+            chip.textContent = pathOps[i];
+            visualizerSelectionPath.appendChild(chip);
+        }
+    }
+
+    function renderFocusedBranchGraph(branch) {
+        if (!visualizerGraph || !visualizerSvg) return;
+        visualizerGraph.innerHTML = '';
+        resetVisualizerTransform();
+
+        if (!branch) {
+            visualizerSvg.setAttribute('viewBox', '0 0 960 320');
+            return;
+        }
+
+        const included = new Set(['root']);
+        let parentId = 'root';
+        for (let i = 0; i < branch.pathOps.length; i++) {
+            const childId = parentId + '>' + branch.pathOps[i];
+            included.add(childId);
+            const siblings = visRuntime.childrenById.get(parentId) || [];
+            for (let j = 0; j < siblings.length; j++) {
+                included.add(siblings[j].id);
+            }
+            parentId = childId;
+        }
+        const finalChildren = visRuntime.childrenById.get(parentId) || [];
+        for (let i = 0; i < finalChildren.length; i++) {
+            included.add(finalChildren[i].id);
+        }
+
+        const childrenById = new Map();
+        const nodeById = new Map();
+        for (const id of included) {
+            const node = visRuntime.treeNodes.get(id);
+            if (!node) continue;
+            nodeById.set(id, node);
+            childrenById.set(id, []);
+        }
+        for (const id of included) {
+            const children = visRuntime.childrenById.get(id) || [];
+            const kept = [];
+            for (let i = 0; i < children.length; i++) {
+                if (included.has(children[i].id)) kept.push(children[i]);
+            }
+            kept.sort((a, b) => {
+                if (b.count !== a.count) return b.count - a.count;
+                return a.op.localeCompare(b.op);
+            });
+            childrenById.set(id, kept);
+        }
+
+        const subtreeWeight = new Map();
+        function measure(nodeId) {
+            const children = childrenById.get(nodeId) || [];
+            if (children.length === 0) {
+                subtreeWeight.set(nodeId, 1);
+                return 1;
+            }
+            let total = 0;
+            for (let i = 0; i < children.length; i++) total += measure(children[i].id);
+            const value = Math.max(1, total);
+            subtreeWeight.set(nodeId, value);
+            return value;
+        }
+
+        const totalWeight = measure('root');
+        const maxDepth = Math.max(1, branch.pathOps.length);
+        const width = Math.max(880, Math.ceil(totalWeight * 112 + 140));
+        const height = Math.max(300, Math.ceil((maxDepth + 1) * 112 + 90));
+        const marginX = 70;
+        const marginTop = 42;
+        const stepY = maxDepth > 0 ? ((height - marginTop - 50) / maxDepth) : 120;
+        visualizerSvg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+        visualizerSvg.setAttribute('width', String(width));
+        visualizerSvg.setAttribute('height', String(height));
+
+        const posById = new Map();
+        function assign(nodeId, leftUnits, rightUnits) {
+            const node = nodeById.get(nodeId);
+            if (!node) return;
+            const x = marginX + ((leftUnits + rightUnits) * 0.5 * 112);
+            const y = marginTop + (node.depth * stepY);
+            posById.set(nodeId, { x, y, node });
+            const children = childrenById.get(nodeId) || [];
+            let cursor = leftUnits;
+            for (let i = 0; i < children.length; i++) {
+                const weight = subtreeWeight.get(children[i].id) || 1;
+                assign(children[i].id, cursor, cursor + weight);
+                cursor += weight;
+            }
+        }
+        assign('root', 0, totalWeight);
+
+        const selectedIds = new Set(['root']);
+        let selectedPrefix = 'root';
+        for (let i = 0; i < branch.pathOps.length; i++) {
+            selectedPrefix += '>' + branch.pathOps[i];
+            selectedIds.add(selectedPrefix);
+        }
+
+        const svgNS = 'http://www.w3.org/2000/svg';
+        for (const [parentNodeId, children] of childrenById.entries()) {
+            const p1 = posById.get(parentNodeId);
+            if (!p1) continue;
+            for (let i = 0; i < children.length; i++) {
+                const child = children[i];
+                const p2 = posById.get(child.id);
+                if (!p2) continue;
+                const path = document.createElementNS(svgNS, 'path');
+                const midY = p1.y + ((p2.y - p1.y) * 0.52);
+                path.setAttribute('d', `M ${p1.x} ${p1.y} C ${p1.x} ${midY}, ${p2.x} ${midY}, ${p2.x} ${p2.y}`);
+                path.setAttribute('fill', 'none');
+                path.setAttribute('class', 'vis-edge');
+                if (selectedIds.has(parentNodeId) && selectedIds.has(child.id)) {
+                    path.classList.add('vis-edge-focus');
+                }
+                visualizerGraph.appendChild(path);
+            }
+        }
+
+        for (const [nodeId, pos] of posById.entries()) {
+            const node = pos.node;
+            const radius = node.depth === 0 ? 12 : Math.max(10, Math.min(16, 9 + Math.log2(1 + node.count)));
+
+            const circle = document.createElementNS(svgNS, 'circle');
+            circle.setAttribute('cx', pos.x);
+            circle.setAttribute('cy', pos.y);
+            circle.setAttribute('r', radius);
+            circle.setAttribute('fill', node.depth === 0 ? '#b8e3ff' : '#68b9ff');
+            circle.setAttribute('class', 'vis-node');
+            if (selectedIds.has(nodeId)) circle.classList.add('vis-node-focus');
+            circle.addEventListener('mouseenter', () => {
+                if (visualizerNodeInfo) {
+                    const sample = (node.sample || '').replace(/\s+/g, ' ').slice(0, 160);
+                    visualizerNodeInfo.textContent = `${node.pathText} | branches: ${node.count} | best score: ${(node.score || 0).toFixed(2)}${sample ? ` | sample: ${sample}` : ''}`;
+                }
+            });
+            visualizerGraph.appendChild(circle);
+
+            const label = document.createElementNS(svgNS, 'text');
+            label.setAttribute('x', String(pos.x));
+            label.setAttribute('y', String(node.depth === 0 ? pos.y - (radius + 11) : pos.y + radius + 14));
+            label.setAttribute('text-anchor', 'middle');
+            label.setAttribute('dominant-baseline', 'middle');
+            label.setAttribute('class', 'vis-label');
+            if (selectedIds.has(nodeId)) label.classList.add('vis-label-focus');
+            label.textContent = node.depth === 0 ? 'Input' : node.op;
+            visualizerGraph.appendChild(label);
+        }
+    }
+
+    function selectVisualizerBranch(branchId, scrollIntoView = false) {
+        const branch = visRuntime.filteredBranches.find(item => item.id === branchId)
+            || visRuntime.branches.find(item => item.id === branchId)
+            || null;
+        visRuntime.selectedBranchId = branch ? branch.id : '';
+
+        for (const [id, el] of visRuntime.branchElById.entries()) {
+            const active = !!branch && id === branch.id;
+            el.classList.toggle('active', active);
+            if (active && scrollIntoView) {
+                el.scrollIntoView({ block: 'nearest' });
+            }
+        }
+
+        if (!branch) {
+            renderVisualizerSelectionPath([]);
+            renderFocusedBranchGraph(null);
+            if (visualizerSelectionMeta) visualizerSelectionMeta.textContent = 'No branch selected.';
+            return;
+        }
+
+        renderVisualizerSelectionPath(branch.pathOps);
+        renderFocusedBranchGraph(branch);
+
+        const branchIndex = visRuntime.filteredBranches.findIndex(item => item.id === branch.id);
+        if (visualizerSelectionMeta) {
+            const scoreText = typeof branch.score === 'number' ? branch.score.toFixed(2) : '0.00';
+            const rankText = branchIndex >= 0 ? `Filtered rank ${branchIndex + 1} of ${visRuntime.filteredBranches.length}` : `Overall rank ${branch.rank}`;
+            visualizerSelectionMeta.textContent = `${rankText} | depth ${branch.pathOps.length} | score ${scoreText}`;
+        }
+    }
+
+    function renderVisualizerBranchList() {
+        if (!visualizerBranchList) return;
+        visualizerBranchList.innerHTML = '';
+        visRuntime.branchElById.clear();
+
+        if (!visRuntime.filteredBranches.length) {
+            const empty = document.createElement('div');
+            empty.className = 'visualizer-empty';
+            empty.textContent = visRuntime.branches.length ? 'No branches match the current search.' : 'Run Smart Magic Search to inspect ranked branches.';
+            visualizerBranchList.appendChild(empty);
+            return;
+        }
+
+        const displayLimit = 250;
+        const visibleBranches = visRuntime.filteredBranches.slice(0, displayLimit);
+        for (let i = 0; i < visibleBranches.length; i++) {
+            const branch = visibleBranches[i];
+            const sequenceText = branch.pathText || '[No sequence]';
+            const outputText = branch.text || '';
+            const cribQuery = visSearchCribInput ? visSearchCribInput.value : '';
+
+            const item = document.createElement('div');
+            item.className = 'visualizer-branch-item';
+            item.tabIndex = 0;
+            item.setAttribute('role', 'button');
+            item.setAttribute('aria-label', `Select branch ${branch.rank}`);
+
+            const top = document.createElement('div');
+            top.className = 'visualizer-branch-top';
+
+            const rank = document.createElement('span');
+            rank.className = 'visualizer-branch-rank';
+            rank.textContent = `#${branch.rank}`;
+            top.appendChild(rank);
+
+            const score = document.createElement('span');
+            score.className = 'visualizer-branch-score';
+            score.textContent = branch.score.toFixed(2);
+            top.appendChild(score);
+
+            const sequenceSection = document.createElement('div');
+            sequenceSection.className = 'visualizer-branch-section';
+            const sequenceLabel = document.createElement('div');
+            sequenceLabel.className = 'visualizer-branch-label';
+            sequenceLabel.textContent = 'Sequence';
+            const sequenceBody = document.createElement('div');
+            sequenceBody.className = 'visualizer-branch-sequence';
+            sequenceBody.textContent = sequenceText;
+            sequenceSection.appendChild(sequenceLabel);
+            sequenceSection.appendChild(sequenceBody);
+
+            const outputSection = document.createElement('div');
+            outputSection.className = 'visualizer-branch-section';
+            const outputLabel = document.createElement('div');
+            outputLabel.className = 'visualizer-branch-label';
+            outputLabel.textContent = 'Output';
+            const outputBody = document.createElement('div');
+            outputBody.className = 'visualizer-branch-preview';
+            outputBody.appendChild(buildHighlightedSnippet(outputText, cribQuery));
+            outputSection.appendChild(outputLabel);
+            outputSection.appendChild(outputBody);
+
+            item.appendChild(top);
+            item.appendChild(sequenceSection);
+            item.appendChild(outputSection);
+
+            item.addEventListener('click', () => selectVisualizerBranch(branch.id));
+            item.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    selectVisualizerBranch(branch.id);
+                }
+            });
+            visualizerBranchList.appendChild(item);
+            visRuntime.branchElById.set(branch.id, item);
+        }
+
+        if (visRuntime.filteredBranches.length > displayLimit) {
+            const more = document.createElement('div');
+            more.className = 'visualizer-list-note';
+            more.textContent = `Showing top ${displayLimit} of ${visRuntime.filteredBranches.length} matching branches. Refine search to narrow further.`;
+            visualizerBranchList.appendChild(more);
+        }
+    }
+
+    function applyVisualizerSearch(focusFirst = true) {
+        const crib = ((visSearchCribInput ? visSearchCribInput.value : '') || '').trim().toLowerCase();
+
+        visRuntime.filteredBranches = visRuntime.branches.filter((branch) => {
+            const cribOk = !crib || ((branch.text || '').toLowerCase().includes(crib));
+            return cribOk;
+        });
+        visRuntime.matches = visRuntime.filteredBranches.slice();
+        visRuntime.matchIndex = visRuntime.filteredBranches.length > 0 ? 0 : -1;
+
+        renderVisualizerBranchList();
+
+        const currentStillVisible = visRuntime.filteredBranches.some(item => item.id === visRuntime.selectedBranchId);
+        if (focusFirst || !currentStillVisible) {
+            selectVisualizerBranch(visRuntime.filteredBranches[0]?.id || '', true);
+        } else {
+            selectVisualizerBranch(visRuntime.selectedBranchId, false);
+        }
+
+        if (visualizerStats) {
+            const total = visRuntime.branches.length;
+            const filtered = visRuntime.filteredBranches.length;
+            visualizerStats.textContent = `Branch Explorer: ${total} branch${total === 1 ? '' : 'es'} ranked${filtered !== total ? ` | Search: ${filtered} match(es)` : ''}.`;
+        }
+    }
+
+    function jumpToNextSearchMatch() {
+        if (!visRuntime.matches || visRuntime.matches.length === 0) return;
+        visRuntime.matchIndex = (visRuntime.matchIndex + 1) % visRuntime.matches.length;
+        const branch = visRuntime.matches[visRuntime.matchIndex];
+        selectVisualizerBranch(branch.id, true);
+    }
+
+    if (visSearchBtn) visSearchBtn.addEventListener('click', () => applyVisualizerSearch(true));
+    if (visSearchNextBtn) visSearchNextBtn.addEventListener('click', jumpToNextSearchMatch);
+    if (visSearchClearBtn) {
+        visSearchClearBtn.addEventListener('click', () => {
+            if (visSearchCribInput) visSearchCribInput.value = '';
+            applyVisualizerSearch(true);
+        });
+    }
+    if (visSearchCribInput) {
+        visSearchCribInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') applyVisualizerSearch(true);
+        });
+    }
+
+    runVisualizerSearch = applyVisualizerSearch;
 
     function setResultsTab(tabName) {
         activeResultsTab = tabName;
-        const showVisualizer = tabName === 'visualizer';
-        if (outputContainer) outputContainer.classList.toggle('hidden', showVisualizer);
-        if (visualizerPanel) visualizerPanel.classList.toggle('hidden', !showVisualizer);
+        const showVisualizer = false;
+        if (outputContainer) outputContainer.classList.toggle('hidden', false);
+        if (visualizerPanel) visualizerPanel.classList.toggle('hidden', !visualizerOverlayOpen);
         if (tabOutput) {
-            tabOutput.classList.toggle('active', !showVisualizer);
-            tabOutput.setAttribute('aria-selected', String(!showVisualizer));
+            tabOutput.classList.toggle('active', !visualizerOverlayOpen);
+            tabOutput.setAttribute('aria-selected', String(!visualizerOverlayOpen));
         }
         if (tabVisualizer) {
-            tabVisualizer.classList.toggle('active', showVisualizer);
-            tabVisualizer.setAttribute('aria-selected', String(showVisualizer));
+            tabVisualizer.classList.toggle('active', visualizerOverlayOpen);
+            tabVisualizer.setAttribute('aria-selected', String(visualizerOverlayOpen));
         }
     }
 
     if (tabOutput) tabOutput.addEventListener('click', () => setResultsTab('output'));
-    if (tabVisualizer) tabVisualizer.addEventListener('click', () => setResultsTab('visualizer'));
+
+    function openVisualizerOverlay() {
+        if (!visRuntime.branches.length) {
+            if (statusIndicator) {
+                statusIndicator.textContent = 'Run Smart Magic Search first to open the visualizer.';
+                statusIndicator.className = 'status-indicator error';
+            }
+            return;
+        }
+        visualizerOverlayOpen = true;
+        document.body.classList.add('visualizer-popout-open');
+        if (visualizerPanel) visualizerPanel.classList.remove('hidden');
+        setResultsTab('output');
+    }
+
+    function closeVisualizerOverlay() {
+        visualizerOverlayOpen = false;
+        document.body.classList.remove('visualizer-popout-open');
+        if (visualizerPanel) visualizerPanel.classList.add('hidden');
+        setResultsTab('output');
+    }
+
+    if (tabVisualizer) {
+        tabVisualizer.addEventListener('click', () => {
+            openVisualizerOverlay();
+        });
+    }
+    if (visualizerCloseBtn) visualizerCloseBtn.addEventListener('click', closeVisualizerOverlay);
+    if (visualizerPanel) {
+        visualizerPanel.addEventListener('click', (e) => {
+            if (e.target === visualizerPanel) closeVisualizerOverlay();
+        });
+    }
 
     function materializePathFromResult(res) {
         if (res.path && Array.isArray(res.path)) return res.path;
@@ -348,37 +608,39 @@ document.addEventListener('DOMContentLoaded', () => {
         return color;
     }
 
-    function clearVisualizer(message = 'Run Smart Magic Search to generate a graph.') {
+    function clearVisualizer(message = 'Run Smart Magic Search to generate ranked branches.') {
         if (visualizerGraph) {
             visualizerGraph.innerHTML = '';
-            visualizerGraph.classList.remove('vis-filtering');
         }
         if (visualizerSvg) {
-            visualizerSvg.setAttribute('viewBox', '0 0 1000 600');
-            visualizerSvg.setAttribute('width', '1000');
-            visualizerSvg.setAttribute('height', '600');
+            visualizerSvg.setAttribute('viewBox', '0 0 960 320');
+            visualizerSvg.setAttribute('width', '960');
+            visualizerSvg.setAttribute('height', '320');
         }
         resetVisualizerTransform();
         if (visualizerStats) visualizerStats.textContent = message;
-        if (visualizerOps) visualizerOps.innerHTML = '';
-        if (visualizerNodeInfo) visualizerNodeInfo.textContent = 'Hover or click a node to inspect a branch.';
-        visRuntime.nodes = [];
-        visRuntime.nodeElById.clear();
-        visRuntime.labelElById.clear();
-        visRuntime.edgeEls = [];
+        if (visualizerBranchList) visualizerBranchList.innerHTML = '<div class="visualizer-empty">Run Smart Magic Search to inspect ranked branches.</div>';
+        if (visualizerSelectionMeta) visualizerSelectionMeta.textContent = 'Select a branch to inspect its path and nearby alternatives.';
+        if (visualizerSelectionPath) visualizerSelectionPath.innerHTML = '';
+        visRuntime.branches = [];
+        visRuntime.filteredBranches = [];
+        visRuntime.branchElById.clear();
+        visRuntime.treeNodes.clear();
+        visRuntime.childrenById.clear();
         visRuntime.parentById.clear();
-        visRuntime.childCountById.clear();
         visRuntime.matches = [];
         visRuntime.matchIndex = -1;
+        visRuntime.selectedBranchId = '';
     }
 
     function renderVisualizer(results, meta = {}) {
         if (!visualizerGraph || !visualizerSvg) return;
 
-        const maxNodes = 1600;
-        const maxEdges = 2600;
+        const maxNodes = 2200;
+        const maxEdges = 3600;
         const nodes = new Map();
-        const edges = [];
+        const childrenById = new Map();
+        const branches = [];
 
         nodes.set('root', {
             id: 'root',
@@ -390,6 +652,7 @@ document.addEventListener('DOMContentLoaded', () => {
             pathText: '(input)',
             pathOps: []
         });
+        childrenById.set('root', []);
 
         let truncated = false;
         const allPathsCount = results ? results.length : 0;
@@ -402,6 +665,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 let parentId = 'root';
                 let parentPathText = '';
+                let branchTruncated = false;
 
                 for (let i = 0; i < path.length; i++) {
                     const op = path[i];
@@ -410,8 +674,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
                     let node = nodes.get(nodeId);
                     if (!node) {
-                        if (nodes.size >= maxNodes || edges.length >= maxEdges) {
+                        if (nodes.size >= maxNodes || (nodes.size - 1) >= maxEdges) {
                             truncated = true;
+                            branchTruncated = true;
                             break;
                         }
                         const parentNode = nodes.get(parentId);
@@ -426,7 +691,9 @@ document.addEventListener('DOMContentLoaded', () => {
                             pathOps: parentNode && parentNode.pathOps ? parentNode.pathOps.concat(op) : [op]
                         };
                         nodes.set(nodeId, node);
-                        edges.push({ from: parentId, to: nodeId, op });
+                        if (!childrenById.has(parentId)) childrenById.set(parentId, []);
+                        childrenById.get(parentId).push(node);
+                        if (!childrenById.has(nodeId)) childrenById.set(nodeId, []);
                     } else if (typeof res.score === 'number' && res.score > node.score) {
                         node.score = res.score;
                         if (res.text) node.sample = res.text.slice(0, 120);
@@ -437,149 +704,43 @@ document.addEventListener('DOMContentLoaded', () => {
                     parentPathText = pathText;
                 }
 
+                if (!branchTruncated) {
+                    branches.push({
+                        id: `branch-${r + 1}`,
+                        rank: branches.length + 1,
+                        score: typeof res.score === 'number' ? res.score : 0,
+                        text: res.text || '',
+                        pathOps: path.slice(),
+                        pathText: path.join(' -> '),
+                        leafId: parentId
+                    });
+                }
+
                 if (truncated) break;
             }
         }
-
-        const depthLayers = new Map();
-        for (const node of nodes.values()) {
-            if (!depthLayers.has(node.depth)) depthLayers.set(node.depth, []);
-            depthLayers.get(node.depth).push(node);
-        }
-
-        const depths = Array.from(depthLayers.keys()).sort((a, b) => a - b);
-        const maxDepth = depths.length > 0 ? depths[depths.length - 1] : 0;
-        let maxLayerSize = 1;
-        for (const arr of depthLayers.values()) {
-            if (arr.length > maxLayerSize) maxLayerSize = arr.length;
-        }
-
-        const width = Math.max(1000, 220 + maxDepth * 190);
-        const height = Math.max(620, 170 + maxLayerSize * 36);
-        const marginX = 90;
-        const marginY = 60;
-        const usableW = Math.max(1, width - marginX * 2);
-        const usableH = Math.max(1, height - marginY * 2);
-        const stepX = maxDepth > 0 ? (usableW / maxDepth) : usableW;
-
-        visualizerSvg.setAttribute('viewBox', `0 0 ${width} ${height}`);
-        visualizerSvg.setAttribute('width', String(width));
-        visualizerSvg.setAttribute('height', String(height));
-        visualizerGraph.innerHTML = '';
-        resetVisualizerTransform();
-        visRuntime.nodes = [];
-        visRuntime.nodeElById.clear();
-        visRuntime.labelElById.clear();
-        visRuntime.edgeEls = [];
-        visRuntime.parentById.clear();
-        visRuntime.childCountById.clear();
-
-        const posById = new Map();
-        for (const depth of depths) {
-            const layer = depthLayers.get(depth);
-            layer.sort((a, b) => b.count - a.count);
-            for (let i = 0; i < layer.length; i++) {
-                const node = layer[i];
-                const x = marginX + depth * stepX;
-                const y = marginY + ((i + 1) * usableH / (layer.length + 1));
-                posById.set(node.id, { x, y, node });
+        for (const [parentId, children] of childrenById.entries()) {
+            children.sort((a, b) => {
+                if (b.count !== a.count) return b.count - a.count;
+                return a.op.localeCompare(b.op);
+            });
+            for (let i = 0; i < children.length; i++) {
+                visRuntime.parentById.set(children[i].id, parentId);
             }
         }
 
-        const svgNS = 'http://www.w3.org/2000/svg';
+        visRuntime.treeNodes = nodes;
+        visRuntime.childrenById = childrenById;
+        visRuntime.branches = branches;
+        visRuntime.filteredBranches = branches.slice();
+        visRuntime.matches = branches.slice();
+        visRuntime.matchIndex = branches.length > 0 ? 0 : -1;
+        visRuntime.selectedBranchId = '';
 
-        for (let i = 0; i < edges.length; i++) {
-            const edge = edges[i];
-            const p1 = posById.get(edge.from);
-            const p2 = posById.get(edge.to);
-            if (!p1 || !p2) continue;
-            const line = document.createElementNS(svgNS, 'line');
-            line.setAttribute('x1', p1.x);
-            line.setAttribute('y1', p1.y);
-            line.setAttribute('x2', p2.x);
-            line.setAttribute('y2', p2.y);
-            line.setAttribute('class', 'vis-edge');
-            visualizerGraph.appendChild(line);
-            visRuntime.edgeEls.push({ from: edge.from, to: edge.to, el: line });
-            visRuntime.parentById.set(edge.to, edge.from);
-            visRuntime.childCountById.set(edge.from, (visRuntime.childCountById.get(edge.from) || 0) + 1);
-        }
-
-        function setNodeInfo(node) {
-            if (!visualizerNodeInfo) return;
-            const scoreText = typeof node.score === 'number' ? node.score.toFixed(2) : '0.00';
-            const sample = (node.sample || '').replace(/\s+/g, ' ').slice(0, 180);
-            visualizerNodeInfo.textContent = `${node.pathText} | visits: ${node.count} | best score: ${scoreText}${sample ? ` | sample: ${sample}` : ''}`;
-        }
-
-        for (const depth of depths) {
-            const layer = depthLayers.get(depth);
-            for (let i = 0; i < layer.length; i++) {
-                const node = layer[i];
-                const pos = posById.get(node.id);
-                const radius = node.depth === 0 ? 12 : Math.max(8, Math.min(14, 8 + Math.log2(1 + node.count)));
-
-                const circle = document.createElementNS(svgNS, 'circle');
-                circle.setAttribute('cx', pos.x);
-                circle.setAttribute('cy', pos.y);
-                circle.setAttribute('r', radius);
-                circle.setAttribute('fill', colorForOp(node.op));
-                circle.setAttribute('class', 'vis-node');
-                circle.addEventListener('mouseenter', () => setNodeInfo(node));
-                circle.addEventListener('click', () => setNodeInfo(node));
-                visualizerGraph.appendChild(circle);
-                visRuntime.nodeElById.set(node.id, circle);
-                visRuntime.nodes.push({
-                    id: node.id,
-                    x: pos.x,
-                    y: pos.y,
-                    depth: node.depth,
-                    pathText: node.pathText,
-                    pathOps: node.pathOps || [],
-                    sample: node.sample || '',
-                    count: node.count || 0,
-                    score: node.score || 0
-                });
-
-                const label = document.createElementNS(svgNS, 'text');
-                label.setAttribute('x', String(pos.x + radius + 4));
-                label.setAttribute('y', String(pos.y + 3));
-                label.setAttribute('class', 'vis-label');
-                label.textContent = node.depth === 0 ? 'Input' : node.op;
-                visualizerGraph.appendChild(label);
-                visRuntime.labelElById.set(node.id, label);
-            }
-        }
-
+        if (typeof runVisualizerSearch === 'function') runVisualizerSearch(true);
         if (visualizerStats) {
-            const truncatedText = truncated ? ' (truncated for rendering limits)' : '';
-            const mode = meta.action === 'all' ? 'All Decodes' : 'Smart Magic Search';
-            visualizerStats.textContent = `${mode}: ${nodes.size} nodes, ${edges.length} edges from ${allPathsCount} results${truncatedText}.`;
-        }
-
-        // Auto turbo-pan for very large graphs
-        if (nodes.size > 900 || edges.length > 1400 || width > 2200 || height > 1800) {
-            visState.panSpeed = 20;
-        } else if (nodes.size > 500 || edges.length > 900 || width > 1600 || height > 1300) {
-            visState.panSpeed = 8;
-        } else {
-            visState.panSpeed = visState.defaultPanSpeed;
-        }
-
-        if (visualizerOps) {
-            visualizerOps.innerHTML = '';
-            const ops = Array.isArray(meta.activeOps) ? meta.activeOps : [];
-            for (let i = 0; i < ops.length; i++) {
-                const chip = document.createElement('span');
-                chip.className = 'visualizer-op-chip';
-                chip.style.borderColor = colorForOp(ops[i]);
-                chip.textContent = ops[i];
-                visualizerOps.appendChild(chip);
-            }
-        }
-
-        if (typeof runVisualizerSearch === 'function') {
-            runVisualizerSearch(false);
+            const truncatedText = truncated ? ' Rendering trimmed for explorer limits.' : '';
+            visualizerStats.textContent = `Branch Explorer: ${branches.length} branch${branches.length === 1 ? '' : 'es'} from ${allPathsCount} result${allPathsCount === 1 ? '' : 's'}.${truncatedText}`;
         }
     }
 
@@ -590,6 +751,201 @@ document.addEventListener('DOMContentLoaded', () => {
         div.className = 'empty-state';
         div.textContent = message;
         container.appendChild(div);
+    }
+
+    function getActiveOps() {
+        return Object.keys(toggleCheckboxes).filter(op => toggleCheckboxes[op].checked);
+    }
+
+    function setInitialSequencePopover(open) {
+        initialSequencePopoverOpen = !!open;
+        if (sequenceBuilder) sequenceBuilder.classList.toggle('hidden', !initialSequencePopoverOpen);
+        if (initialSequenceTrigger) initialSequenceTrigger.setAttribute('aria-expanded', initialSequencePopoverOpen ? 'true' : 'false');
+        if (initialSequencePopoverOpen) updateSequencePopoverWidth();
+    }
+
+    function updateInitialSequenceSummary() {
+        const count = initialSequenceOps.length;
+        const countLabel = `${count} step${count === 1 ? '' : 's'}`;
+
+        if (initialSequenceCount) {
+            initialSequenceCount.textContent = countLabel;
+            initialSequenceCount.classList.toggle('is-empty', count === 0);
+        }
+        if (initialSequenceLength) {
+            initialSequenceLength.textContent = countLabel;
+            initialSequenceLength.classList.toggle('is-empty', count === 0);
+        }
+
+        const summary = initialSequenceTrigger?.querySelector('.sequence-trigger-summary');
+        if (summary) {
+            summary.textContent = count === 0 ? 'Sequence' : `${countLabel} selected`;
+        }
+        if (initialSequenceClearBtn) {
+            initialSequenceClearBtn.disabled = count === 0;
+        }
+    }
+
+    function getInitialSequenceStatusText(sequence = initialSequenceOps) {
+        const count = Array.isArray(sequence) ? sequence.length : 0;
+        if (count <= 0) return '';
+        return `, initial sequence: ${count} step${count === 1 ? '' : 's'}`;
+    }
+
+    function updateSequencePopoverWidth() {
+        if (!sequenceBuilder || !initialSequenceAvailable || !initialSequenceTrigger) return;
+        sequenceBuilder.style.width = '';
+        sequenceBuilder.style.minWidth = '';
+        sequenceBuilder.style.maxWidth = '';
+        sequenceBuilder.style.left = '';
+        sequenceBuilder.style.right = '';
+        sequenceBuilder.style.transform = '';
+
+        const viewportWidth = Math.max(320, window.innerWidth || 0);
+        const desired = Math.max(
+            640,
+            Math.min(initialSequenceAvailable.scrollWidth + 72, viewportWidth - 24)
+        );
+        const applied = Math.min(desired, viewportWidth - 24);
+        sequenceBuilder.style.width = `${applied}px`;
+        sequenceBuilder.style.minWidth = `${Math.min(640, applied)}px`;
+        sequenceBuilder.style.maxWidth = `${viewportWidth - 24}px`;
+
+        const anchorRect = sequenceBuilder.parentElement?.getBoundingClientRect();
+        const triggerRect = initialSequenceTrigger.getBoundingClientRect();
+        if (!anchorRect) return;
+
+        const viewportPadding = 12;
+        const desiredLeft = triggerRect.left + (triggerRect.width / 2) - (applied * 0.35);
+        const clampedLeft = Math.max(
+            viewportPadding,
+            Math.min(desiredLeft, viewportWidth - applied - viewportPadding)
+        );
+        sequenceBuilder.style.left = `${clampedLeft - anchorRect.left}px`;
+        sequenceBuilder.style.right = 'auto';
+        sequenceBuilder.style.transform = 'none';
+    }
+
+    function renderSelectedSequence() {
+        if (!initialSequenceSelected) return;
+        initialSequenceSelected.innerHTML = '';
+        updateInitialSequenceSummary();
+
+        if (initialSequenceOps.length === 0) {
+            const placeholder = document.createElement('span');
+            placeholder.className = 'sequence-placeholder';
+            placeholder.textContent = 'No initial sequence selected.';
+            initialSequenceSelected.appendChild(placeholder);
+            return;
+        }
+
+        initialSequenceOps.forEach((opName, index) => {
+            const block = document.createElement('div');
+            block.className = 'sequence-block';
+            block.draggable = true;
+            block.dataset.index = String(index);
+
+            const stepBadge = document.createElement('span');
+            stepBadge.className = 'sequence-step-badge';
+            stepBadge.textContent = String(index + 1);
+            block.appendChild(stepBadge);
+
+            const label = document.createElement('span');
+            label.className = 'sequence-block-label';
+            label.textContent = opName;
+            block.appendChild(label);
+
+            const controls = document.createElement('div');
+            controls.className = 'sequence-block-controls';
+
+            const removeBtn = document.createElement('button');
+            removeBtn.type = 'button';
+            removeBtn.className = 'sequence-block-btn danger';
+            removeBtn.textContent = '×';
+            removeBtn.setAttribute('aria-label', `Remove ${opName} from sequence`);
+            removeBtn.addEventListener('click', () => {
+                initialSequenceOps.splice(index, 1);
+                renderSelectedSequence();
+            });
+            controls.appendChild(removeBtn);
+
+            block.appendChild(controls);
+
+            block.addEventListener('dragstart', (e) => {
+                if (e.dataTransfer) {
+                    e.dataTransfer.effectAllowed = 'move';
+                    e.dataTransfer.setData('text/plain', String(index));
+                }
+                block.classList.add('dragging');
+            });
+
+            block.addEventListener('dragend', () => {
+                block.classList.remove('dragging');
+                initialSequenceSelected.querySelectorAll('.sequence-block').forEach((el) => {
+                    el.classList.remove('drag-target');
+                });
+            });
+
+            block.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                if (block.classList.contains('dragging')) return;
+                block.classList.add('drag-target');
+            });
+
+            block.addEventListener('dragleave', () => {
+                block.classList.remove('drag-target');
+            });
+
+            block.addEventListener('drop', (e) => {
+                e.preventDefault();
+                block.classList.remove('drag-target');
+                if (!e.dataTransfer) return;
+                const fromIndex = Number.parseInt(e.dataTransfer.getData('text/plain'), 10);
+                const toIndex = index;
+                if (!Number.isFinite(fromIndex) || fromIndex === toIndex || fromIndex < 0 || fromIndex >= initialSequenceOps.length) {
+                    return;
+                }
+                const moved = initialSequenceOps.splice(fromIndex, 1)[0];
+                initialSequenceOps.splice(toIndex, 0, moved);
+                renderSelectedSequence();
+            });
+
+            initialSequenceSelected.appendChild(block);
+        });
+    }
+
+    function renderAvailableSequenceOps() {
+        if (!initialSequenceAvailable) return;
+        initialSequenceAvailable.innerHTML = '';
+
+        const activeOps = getActiveOps();
+        const allowed = new Set(activeOps);
+        initialSequenceOps = initialSequenceOps.filter(op => allowed.has(op));
+        renderSelectedSequence();
+
+        if (activeOps.length === 0) {
+            const empty = document.createElement('span');
+            empty.className = 'sequence-placeholder';
+            empty.textContent = 'Enable ciphers above to build a sequence.';
+            initialSequenceAvailable.appendChild(empty);
+            return;
+        }
+
+        activeOps.forEach((opName) => {
+            const chip = document.createElement('button');
+            chip.type = 'button';
+            chip.className = 'sequence-chip';
+            chip.textContent = opName;
+            chip.setAttribute('aria-label', `Add ${opName} to initial sequence`);
+            chip.addEventListener('click', () => {
+                initialSequenceOps.push(opName);
+                renderSelectedSequence();
+                setInitialSequencePopover(true);
+            });
+            initialSequenceAvailable.appendChild(chip);
+        });
+
+        updateSequencePopoverWidth();
     }
 
     // Generate checkboxes from Registry
@@ -618,10 +974,50 @@ document.addEventListener('DOMContentLoaded', () => {
         toggleCheckboxes[opName] = cb;
     }
 
+    Object.values(toggleCheckboxes).forEach((cb) => {
+        cb.addEventListener('change', renderAvailableSequenceOps);
+    });
+    if (initialSequenceClearBtn) {
+        initialSequenceClearBtn.addEventListener('click', () => {
+            initialSequenceOps = [];
+            renderSelectedSequence();
+        });
+    }
+    if (initialSequenceTrigger) {
+        initialSequenceTrigger.addEventListener('click', (e) => {
+            e.stopPropagation();
+            setInitialSequencePopover(!initialSequencePopoverOpen);
+        });
+    }
+    if (sequenceBuilder) {
+        sequenceBuilder.addEventListener('click', (e) => {
+            e.stopPropagation();
+        });
+    }
+    document.addEventListener('click', () => {
+        if (initialSequencePopoverOpen) setInitialSequencePopover(false);
+    });
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && visualizerOverlayOpen) {
+            closeVisualizerOverlay();
+        } else if (e.key === 'Escape' && initialSequencePopoverOpen) {
+            setInitialSequencePopover(false);
+        }
+    });
+    window.addEventListener('resize', () => {
+        if (initialSequencePopoverOpen) updateSequencePopoverWidth();
+    });
+    renderAvailableSequenceOps();
+    updateInitialSequenceSummary();
+    setInitialSequencePopover(false);
+
     // Buttons setup
     btnClear.addEventListener('click', () => {
         inputText.value = '';
         cribText.value = '';
+        initialSequenceOps = [];
+        renderSelectedSequence();
+        setInitialSequencePopover(false);
         setEmptyState(outputContainer, 'Enter text and choose an operation to begin.');
         clearVisualizer();
         setResultsTab('output');
@@ -703,6 +1099,7 @@ document.addEventListener('DOMContentLoaded', () => {
         toShow.forEach(res => {
             const clone = resultTemplate.content.cloneNode(true);
             const pathContainer = clone.querySelector('.path-badges');
+            const useSequenceBtn = clone.querySelector('.use-sequence-btn');
 
             // Fix #8 — Guard against unmaterialized paths
             const rawPathArr = materializePathFromResult(res);
@@ -712,6 +1109,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 : pathArr;
 
             renderPathBadges(pathContainer, displayPath);
+
+            if (useSequenceBtn) {
+                useSequenceBtn.addEventListener('click', () => {
+                    initialSequenceOps = pathArr.filter(Boolean);
+                    renderSelectedSequence();
+                    setInitialSequencePopover(false);
+                    if (initialSequenceTrigger) {
+                        initialSequenceTrigger.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+                    }
+                });
+            }
 
             const scoreSpan = clone.querySelector('.score-badge');
             if (isAllDecodes) {
@@ -834,22 +1242,9 @@ document.addEventListener('DOMContentLoaded', () => {
         let magicDepth = Number.isFinite(parsedDepth) ? parsedDepth : 10;
         if (magicDepth < 1) magicDepth = 1;
 
-        const activeOps = Object.keys(toggleCheckboxes).filter(op => toggleCheckboxes[op].checked);
-
-        let initialSeq = [];
-        const seqVal = initialSequenceInput.value.trim();
-        if (seqVal) {
-            const opLookup = {};
-            for (const opName of Object.keys(Operations)) {
-                opLookup[opName.toLowerCase()] = opName;
-            }
-            initialSeq = seqVal
-                .split(/[,\s]+/)
-                .map(s => s.trim().toLowerCase())
-                .filter(Boolean)
-                .map(s => opLookup[s])
-                .filter(Boolean);
-        }
+        const activeOps = getActiveOps();
+        const activeSet = new Set(activeOps);
+        const initialSeq = initialSequenceOps.filter(op => activeSet.has(op));
 
         const xorKeyUI = document.getElementById('xor-key');
         const xorKeyTypeUI = document.getElementById('xor-key-type');
@@ -922,9 +1317,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const elapsed = (performance.now() - startTime).toFixed(1);
         if (crazyMode && crazyPayload) {
             const foundText = crazyPayload.found ? 'crib found' : `completed: ${crazyPayload.reason}`;
-            statusIndicator.textContent = `Crazy Mode done (${foundText}) | depth<=${crazyPayload.maxDepth || 10} | expanded ${crazyPayload.expansions.toLocaleString()} | ${(crazyPayload.elapsedMs / 1000).toFixed(1)}s`;
+            statusIndicator.textContent = `Crazy Mode done (${foundText}${getInitialSequenceStatusText(initialSeq)}) | depth<=${crazyPayload.maxDepth || 10} | expanded ${crazyPayload.expansions.toLocaleString()} | ${(crazyPayload.elapsedMs / 1000).toFixed(1)}s`;
         } else {
-            statusIndicator.textContent = `Done (${results.length} results, ${elapsed}ms)`;
+            statusIndicator.textContent = `Done (${results.length} results, ${elapsed}ms${getInitialSequenceStatusText(initialSeq)})`;
         }
         statusIndicator.className = 'status-indicator';
         if (progressBar) progressBar.style.width = '100%';

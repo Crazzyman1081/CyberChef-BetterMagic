@@ -60,14 +60,13 @@ window.DecoderLazyLoader = (function() {
     }
     
     function isCompressionLibLoaded() {
-        return typeof window.Zlib !== 'undefined';
+        return typeof window.fflate !== 'undefined';
     }
     
     function areCompressionOpsEnabled() {
         const ops = window.Decoder?.Operations || {};
         return ops['Gunzip']?.defaultActive || 
-               ops['Zlib Inflate']?.defaultActive || 
-               ops['Raw Inflate']?.defaultActive;
+               ops['Zlib Inflate']?.defaultActive;
     }
     
     return {

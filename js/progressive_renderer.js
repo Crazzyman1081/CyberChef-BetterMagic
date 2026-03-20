@@ -128,12 +128,12 @@ window.DecoderProgressiveRenderer = (function() {
         }
         
         finish() {
-            this.isActive = false;
-            
             // Render any remaining results
             while (this.pendingResults.length > 0) {
                 this.renderBatch();
             }
+
+            this.isActive = false;
             
             if (this.renderTimer) {
                 clearTimeout(this.renderTimer);

@@ -123,14 +123,24 @@ function scoreText(text, crib, parentLen = 0) {
 
     if (parentLen > 0 && len < parentLen) {
         const compressionRatio = parentLen / Math.max(1, len);
+        let maxCompressionBoost = 5;
+        if (len < 8) {
+            // Very short outputs are often accidental decodes; don't over-reward them for shrinking.
+            maxCompressionBoost = 1 + Math.max(0, len - 1) * 0.35;
+        }
         if (normalized > 0) {
-            normalized *= Math.min(compressionRatio, 5);
+            normalized *= Math.min(compressionRatio, maxCompressionBoost);
         }
     }
 
     // --- Structural pattern bonuses ---
     // These detect meaningful content that character-frequency alone misses.
     normalized += computeStructuralBonus(text, sampleLen);
+
+    if (len < 8) {
+        // Single letters / symbols should not outrank actual decoded phrases.
+        normalized *= Math.max(0.125, len / 8);
+    }
 
     return normalized;
 }

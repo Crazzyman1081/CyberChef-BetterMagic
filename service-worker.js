@@ -4,7 +4,7 @@
  * Caches static assets for offline use and faster subsequent loads
  */
 
-const CACHE_NAME = 'bettermagic-v1.2';
+const CACHE_NAME = 'bettermagic-v1.3';
 const CACHE_URLS = [
     './',
     './index.html',
@@ -12,12 +12,15 @@ const CACHE_URLS = [
     './styles.css',
     './js/registry.js',
     './js/scoring.js',
+    './js/debounce.js',
+    './js/lazy_loader.js',
     './js/ui.js',
     './js/crazy.js',
     './js/magic_worker.js',
     './js/performance.js',
     './js/wasm_module.js',
     './js/progressive_renderer.js',
+    './js/sw-register.js',
     './js/ciphers/base32.js',
     './js/ciphers/base45.js',
     './js/ciphers/base58.js',
@@ -38,10 +41,8 @@ const CACHE_URLS = [
     './js/ciphers/compression_utils.js',
     './js/ciphers/gunzip.js',
     './js/ciphers/zlib_inflate.js',
-    './js/ciphers/raw_inflate.js',
-    './js/vendor/zlibjs/zlib_and_gzip.min.js',
-    './js/vendor/zlibjs/gunzip.min.js',
-    './js/vendor/zlibjs/rawinflate.min.js'
+    './js/ciphers/morse.js',
+    './js/ciphers/braille.js'
 ];
 
 // Install event - cache all static assets

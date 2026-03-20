@@ -128,6 +128,7 @@
 
             const scoreText = window.Decoder.scoreText;
             const Operations = window.Decoder.Operations;
+            const initialSequence = Array.isArray(options.initialSequence) ? options.initialSequence : [];
             const activeOpsKeys = options.activeOps || Object.keys(Operations);
             const onProgress = typeof options.onProgress === 'function' ? options.onProgress : null;
             const onCandidateUpdate = typeof options.onCandidateUpdate === 'function' ? options.onCandidateUpdate : null;
@@ -141,6 +142,42 @@
             const maxSeen = Math.max(5000, options.crazyMaxSeen || 250000);
             const topK = Math.max(10, options.crazyTopK || 30);
 
+            let currentText = input;
+            let startingPath = [];
+            if (initialSequence.length > 0) {
+                for (let i = 0; i < initialSequence.length; i++) {
+                    const opName = initialSequence[i];
+                    const op = Operations[opName];
+                    if (!op) break;
+                    try {
+                        const decoded = op.decode(currentText, options);
+                        if (!decoded || decoded === currentText) {
+                            currentText = null;
+                            break;
+                        }
+                        currentText = decoded;
+                        startingPath.push(opName);
+                    } catch (e) {
+                        currentText = null;
+                        break;
+                    }
+                }
+            }
+
+            if (!currentText) {
+                return {
+                    found: false,
+                    reason: 'initial_sequence_failed',
+                    elapsedMs: 0,
+                    expansions: 0,
+                    maxDepth,
+                    seen: 0,
+                    frontier: 0,
+                    result: null,
+                    results: []
+                };
+            }
+
             const opEntries = [];
             for (let i = 0; i < activeOpsKeys.length; i++) {
                 const name = activeOpsKeys[i];
@@ -149,11 +186,12 @@
             }
 
             const start = {
-                normOps: [],
-                pathLen: 0,
-                lastOp: '',
-                text: input,
-                score: scoreText(input, crib, input.length)
+                normOps: startingPath.slice(),
+                pathLen: startingPath.length,
+                searchDepth: 0,
+                lastOp: startingPath.length > 0 ? startingPath[startingPath.length - 1] : '',
+                text: currentText,
+                score: scoreText(currentText, crib, input.length)
             };
 
             // --- Max-heap frontier (audit 1.2) ---
@@ -205,7 +243,7 @@
                 return sorted;
             }
 
-            addSeen(textFingerprint(input), start.score);
+            addSeen(textFingerprint(currentText), start.score);
             topCandidates.push(start);
 
             let found = null;
@@ -234,7 +272,7 @@
                 const parentText = current.text;
                 const parentLen = parentText.length;
                 if (parentLen === 0 || parentLen > 500000) continue;
-                if (current.pathLen >= maxDepth) continue;
+                if ((current.searchDepth || 0) >= maxDepth) continue;
 
                 const testPrefix = parentLen > 5000 ? parentText.slice(0, 5000) : parentText;
                 const inputEntropy = shannonEntropySample(testPrefix, 512);
@@ -270,6 +308,7 @@
                             const candidate = {
                                 normOps: normOps,
                                 pathLen: current.pathLen + 1,
+                                searchDepth: (current.searchDepth || 0) + 1,
                                 lastOp: nextOp,
                                 text: nextText,
                                 score
@@ -292,6 +331,7 @@
                         const candidate = {
                             normOps: normOps,
                             pathLen: current.pathLen + 1,
+                            searchDepth: (current.searchDepth || 0) + 1,
                             lastOp: opName,
                             text: dec,
                             score

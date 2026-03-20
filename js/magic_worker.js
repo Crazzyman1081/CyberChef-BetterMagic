@@ -9,9 +9,6 @@
     importScripts(
         'registry.js',
         'scoring.js',
-        'vendor/zlibjs/zlib_and_gzip.min.js',
-        'vendor/zlibjs/gunzip.min.js',
-        'vendor/zlibjs/rawinflate.min.js',
         'ciphers/compression_utils.js',
         'ciphers/base32.js',
         'ciphers/base45.js',
@@ -31,7 +28,6 @@
         'ciphers/rot8000.js',
         'ciphers/gunzip.js',
         'ciphers/zlib_inflate.js',
-        'ciphers/raw_inflate.js',
         'ciphers/xor.js',
         'crazy.js',
         '../app.js'
